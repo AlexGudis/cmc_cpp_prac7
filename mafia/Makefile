@@ -1,3 +1,4 @@
+GENERATES = main.out
 OBG_FILES = *.o
 CC = g++
 CPPFLAGS = -fconcepts-diagnostics-depth=2 -fsanitize=address,undefined,signed-integer-overflow,pointer-compare,pointer-subtract,leak,bounds,pointer-overflow -O2 -Wall -Wextra -Wpedantic -std=c++23 -lm
@@ -20,6 +21,9 @@ shared_pointer.o: shr_ptr.cpp
 	$(CC) $(CPPFLAGS) -c -o $@ $^
 
 objclean:
-	rm -v $(MY_OBG_FILES)
+	rm -v $(OBG_FILES)
 
-clean: objclean
+distclean:
+	rm -v $(GENERATES)
+
+clean: objclean distclean
