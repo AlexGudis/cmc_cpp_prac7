@@ -62,6 +62,86 @@ public:
         release();
     }
 
+    // Оператор присваивания копированием
+    MySharedPtr& operator=(const MySharedPtr& other) noexcept {
+        if (this != &other) {
+            release();              // Освобождаем текущие ресурсы
+            ptr = other.ptr;        // Копируем данные
+            ref_count = other.ref_count;
+            if (ref_count) {
+                ++(*ref_count);     // Увеличиваем счетчик
+            }
+        }
+        return *this;
+    }
+
+    /*
+    Message hello{text1, std::size(text1)};
+    hello = Message{text2, std::size(text2)};   // присваивание объекта с перемещением
+
+    Стоит отметить, что, как и в случае с конструктором перемещения, присваиваемое значение представляет rvalue - 
+    временный объект в памяти (Message{text2, std::size(text2)};), 
+    который после выполнения операции (присовения) будет не нужен. 
+    И это как раз идеальный случай для применения оператора присваивания с перемещением
+    */
+    // Оператор присваивания перемещением
+    MySharedPtr& operator=(MySharedPtr&& other) noexcept {
+        if (this != &other) {
+            release();              // Освобождаем текущие ресурсы
+            ptr = other.ptr;        // Перемещаем данные
+            ref_count = other.ref_count;
+            other.ptr = nullptr;    // Обнуляем источник
+            other.ref_count = nullptr;
+        }
+        return *this;
+    }
+
+    // Разыменование
+    T& operator*() const noexcept { 
+        return *ptr; 
+    }
+    
+    T* operator->() const noexcept { 
+        return ptr; 
+    }
+    
+    // Получение сырого указателя (адреса в памяти на объект)
+    T* get() const noexcept { 
+        return ptr; 
+    }
+
+    // Сброс указателя
+    void reset(T* p = nullptr) noexcept {
+        release();                  // Освобождаем текущие ресурсы
+        ptr = p;
+        ref_count = p ? new std::atomic<int>(1) : nullptr;
+    }
+
+    // Обмен двух указателей
+    void swap(MySharedPtr& other) noexcept {
+        std::swap(ptr, other.ptr);
+        std::swap(ref_count, other.ref_count);
+    }
+
+    // Получение количества ссылок
+    int use_count() const noexcept {
+        if (ref_count)
+        {
+            return *ref_count;
+        }
+        return 0;
+    }
+    
+    // Проверка на уникальность владения
+    bool unique() const noexcept {
+        return use_count() == 1;
+    }
+    
+    // Явное преобразование в bool
+    explicit operator bool() const noexcept {
+        return ptr != nullptr;
+    }
+
 
 
 };
