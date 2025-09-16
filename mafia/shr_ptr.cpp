@@ -117,12 +117,25 @@ public:
         ref_count = p ? new std::atomic<int>(1) : nullptr;
     }
 
+
+    /*
+    Под капотом это работает вот так
+    namespace std {
+    template<typename T>
+    void swap(T& a, T& b) {
+        T temp = std::move(a);  // Перемещаем a во временную переменную
+        a = std::move(b);       // Перемещаем b в a
+        b = std::move(temp);    // Перемещаем временную переменную в b
+    }
+    */
     // Обмен двух указателей
     void swap(MySharedPtr& other) noexcept {
         std::swap(ptr, other.ptr);
         std::swap(ref_count, other.ref_count);
     }
 
+
+    // const после функции означает, что метод не изменяет объект класса 
     // Получение количества ссылок
     int use_count() const noexcept {
         if (ref_count)
@@ -142,6 +155,16 @@ public:
         return ptr != nullptr;
     }
 
-
-
+    // Операторы сравнения
+    bool operator==(const MySharedPtr& other) const noexcept {
+        return ptr == other.ptr;
+    }
+    
+    bool operator!=(const MySharedPtr& other) const noexcept {
+        return ptr != other.ptr;
+    }
+    
+    bool operator<(const MySharedPtr& other) const noexcept {
+        return ptr < other.ptr;
+    }
 };
