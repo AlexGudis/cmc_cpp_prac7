@@ -1,6 +1,5 @@
+# pragma once
 #include <atomic>
-#include <utility>
-#include <iostream>
 
 
 template <typename T>
@@ -110,7 +109,7 @@ public:
         return ptr; 
     }
 
-    // Сброс указателя
+    // Сброс указателя с возможностью передачи нового объекта 
     void reset(T* p = nullptr) noexcept {
         release();                  // Освобождаем текущие ресурсы
         ptr = p;

@@ -1,6 +1,7 @@
-// Based on https://www.geeksforgeeks.org/logging-system-in-cpp/
-// C++ program to implement a basic logging system.
+// Used to implement by https://www.geeksforgeeks.org/logging-system-in-cpp/
+// Article C++ program to implement a basic logging system.
 
+#pragma once
 #include <ctime>
 #include <fstream>
 #include <iostream>
@@ -15,6 +16,8 @@ public:
     // Constructor: Opens the log file in append mode
     Logger(const std::string& filename)
     {
+
+        // Захардкодили папку logs
         logsDir = std::filesystem::current_path() / "logs";
         std::filesystem::create_directory(logsDir);
         logFile.open(logsDir / filename, std::ios::app);
@@ -78,6 +81,8 @@ private:
     }
 };
 
+
+/*
 int main() {
     Logger logger("logfile.log"); // Create logger instance
     
@@ -87,3 +92,4 @@ int main() {
     logger.log(Loglevel::ERROR, "An error occurred.");
     return 0;
 }
+*/
