@@ -1,708 +1,831 @@
-// main.cpp
-// Требует C++20. Компиляция: g++ -std=c++20 -O2 main.cpp -pthread -o mafia
+#define DEBUG_MODE
+#define DEBUG_RANDOM
 
-#include <bits/stdc++.h>
-#include <filesystem>
-#include <fstream>
-#include <ranges>
-#include <optional>
-#include <atomic>
-#include <thread>
-#include <mutex>
-#include <condition_variable>
-#include <chrono>
+#include <iostream>
+#include <cstdlib>
+#include <algorithm>
 #include <random>
+#include <memory>
+#include <vector>
+#include <map>
+#include <set>
+#include <coroutine>
+#include <future>
+#include <string>
+#include <ranges>
 
-namespace fs = std::filesystem;
-using namespace std::chrono_literals;
+#include "formatter.cpp"
+#include "shr_ptr.cpp"
+#include "logger.cpp"
 
-// ===========================
-// Подключи сюда свой shared_ptr:
-// ===========================
-template<typename T> using SharedPtr = std::shared_ptr<T>;
-// Если у тебя класс называется, например, MySharedPtr, замени на:
-// template<typename T> using SharedPtr = MySharedPtr<T>;
 
-// ===========================
-// Константы и утилиты
-// ===========================
-std::mt19937 rng((unsigned)std::chrono::system_clock::now().time_since_epoch().count());
 
-std::mutex cout_mtx;
-void log_console(const std::string &s){
-    std::lock_guard<std::mutex> g(cout_mtx);
-    std::cout << s << std::endl;
-}
+namespace view = std::ranges::views;
 
-std::string now_ts() {
-    auto t = std::chrono::system_clock::now();
-    std::time_t tt = std::chrono::system_clock::to_time_t(t);
-    char buf[64];
-    std::strftime(buf, sizeof(buf), "%F %T", std::localtime(&tt));
-    return std::string(buf);
-}
 
-// ===========================
-// Концепты для ролей
-// ===========================
+// Based on https://habr.com/ru/articles/798935/
+struct promise;
+struct Task : std::coroutine_handle<promise> {
+    using promise_type = ::promise;
+    std::coroutine_handle<promise_type> handle;
+};
+struct promise {
+    Task get_return_object() { return Task{}; }
+    std::suspend_never initial_suspend() noexcept { return {}; }
+    std::suspend_never final_suspend() noexcept { return {}; }
+    void return_void() {}
+    void unhandled_exception() {}
+};
+
+
 template<typename T>
-concept PlayerRole = requires(T a) {
-    { a.name() } -> std::convertible_to<std::string>;
-    { a.is_alive() } -> std::convertible_to<bool>;
-    { a.act_night() } -> std::same_as<void>;
-    { a.vote() } -> std::convertible_to<int>; // возвращает id выбранного игрока
-};
+void print(T value) {
+    std::cout << Format(value) << std::endl;
+}
 
-// ===========================
-// Логирование в файлы
-// ===========================
-struct Logger {
-    fs::path dir;
-    std::ofstream round_file;
-    std::ofstream summary_file;
-    std::mutex m;
-    int round_idx = 0;
 
-    Logger(const std::string &dirpath="logs") : dir(dirpath) {
-        fs::create_directories(dir);
-        summary_file.open(dir / "summary.log", std::ios::app);
-        if (!summary_file) throw std::runtime_error("can't open summary.log");
-    }
+template<typename T>
+void simple_shuffle(T& container) {
+    std::mt19937 g(rand());
+    std::shuffle(container.begin(), container.end(), g);
+}
 
-    void start_round() {
-        std::lock_guard lk(m);
-        ++round_idx;
-        if (round_file.is_open()) round_file.close();
-        auto p = dir / ("round_" + std::to_string(round_idx) + ".log");
-        round_file.open(p);
-    }
 
-    void log_round(const std::string &s) {
-        std::lock_guard lk(m);
-        if (round_file) {
-            round_file << now_ts() << " " << s << "\n";
-            round_file.flush();
+struct NightActions {
+    unsigned int players_num;
+    bool doctors_action;
+    unsigned int doctors_choice;
+    bool commissar_action;
+    unsigned int commissar_choice;
+    bool journalist_action;
+    std::pair<unsigned int, unsigned int> journalist_choice;
+    bool samurai_action;
+    unsigned int samurai_choice;
+    std::vector<std::vector<unsigned int>> killers;
+    explicit NightActions(unsigned int players_num_) : players_num(players_num_) {
+        for (size_t i = 0; i < players_num; i++) {
+            killers.push_back({});
         }
+        commissar_action = false;
+        doctors_action = false;
+        journalist_action = false;
+        samurai_action = false;
     }
-
-    void log_summary(const std::string &s) {
-        std::lock_guard lk(m);
-        summary_file << now_ts() << " " << s << "\n";
-        summary_file.flush();
-    }
-};
-
-// ===========================
-// Игроки и роли
-// ===========================
-enum class RoleType { MAFIA, CITIZEN, COMMISSAR, DOCTOR, MANIAC, UNKNOWN };
-
-struct GameState; // вперед
-
-struct BasePlayer {
-    int id;
-    std::string nickname;
-    RoleType role;
-    std::atomic<bool> alive{true};
-    std::mutex mtx;
-
-    SharedPtr<GameState> gs;
-    Logger *logger = nullptr;
-
-    BasePlayer(int id_, std::string nick, RoleType r) : id(id_), nickname(std::move(nick)), role(r) {}
-    virtual ~BasePlayer() = default;
-
-    std::string name() const { return nickname + "(" + std::to_string(id) + ")"; }
-    bool is_alive() const { return alive.load(); }
-
-    virtual void act_night() = 0; // действия ночью (мафия выбирает жертву и т.д.)
-    virtual int vote() = 0; // голосование днем: возвращает id выбранного
-};
-
-// forward: GameState
-struct GameState {
-    int N;
-    std::vector<SharedPtr<BasePlayer>> players;
-    std::mutex gs_mtx;
-
-    int day = 0;
-    Logger *logger = nullptr;
-
-    // ночные цели
-    std::optional<int> mafia_target;
-    std::optional<int> doctor_target;
-    std::optional<int> commissar_probe;
-    std::optional<int> maniac_target;
-
-    std::map<int, int> votes; // id -> count
-
-    GameState(int N_): N(N_) {}
-};
-
-// === Роли ===
-// Мафия: выбирает жертву ночью совместно (для простоты: каждая мафия голосует, голос большинства) 
-struct Mafia : BasePlayer {
-    Mafia(int id_, std::string nick): BasePlayer(id_, nick, RoleType::MAFIA) {}
-    void act_night() override {
-        if (!is_alive()) return;
-        // выбирает случайную цель (не самого себя, не мертвого мафию)
-        std::vector<int> candidates;
-        {
-            std::lock_guard lk(gs->gs_mtx);
-            for (auto &p: gs->players) if (p->is_alive() && p->id != id) candidates.push_back(p->id);
+    void reset() {
+        for (size_t i = 0; i < killers.size(); i++) {
+            killers[i].clear();
         }
-        if (candidates.empty()) return;
-        std::uniform_int_distribution<int> d(0, (int)candidates.size()-1);
-        int pick = candidates[d(rng)];
-        // аккумулируем в mafia target (простейшая схема: последняя запись — итог)
-        gs->mafia_target = pick;
-        logger->log_round("Мафия " + name() + " выбрала в цель: " + std::to_string(pick));
-    }
-    int vote() override {
-        // днём мафия может голосовать случайно
-        std::vector<int> candidates;
-        {
-            std::lock_guard lk(gs->gs_mtx);
-            for (auto &p: gs->players) if (p->is_alive() && p->id != id) candidates.push_back(p->id);
-        }
-        if (candidates.empty()) return id;
-        std::uniform_int_distribution<int> d(0, (int)candidates.size()-1);
-        int pick = candidates[d(rng)];
-        logger->log_round("Мафия " + name() + " проголосовал за: " + std::to_string(pick));
-        return pick;
-    }
-};
-
-// Мирный житель
-struct Citizen : BasePlayer {
-    Citizen(int id_, std::string nick): BasePlayer(id_, nick, RoleType::CITIZEN) {}
-    void act_night() override {
-        // ничего не делает
-        (void)0;
-    }
-    int vote() override {
-        std::vector<int> candidates;
-        {
-            std::lock_guard lk(gs->gs_mtx);
-            for (auto &p: gs->players) if (p->is_alive() && p->id != id) candidates.push_back(p->id);
-        }
-        if (candidates.empty()) return id;
-        std::uniform_int_distribution<int> d(0, (int)candidates.size()-1);
-        int pick = candidates[d(rng)];
-        logger->log_round("Мирный " + name() + " проголосовал за: " + std::to_string(pick));
-        return pick;
-    }
-};
-
-// Комиссар — проверяет роль цели ночью
-struct Commissar : BasePlayer {
-    Commissar(int id_, std::string nick): BasePlayer(id_, nick, RoleType::COMMISSAR) {}
-    void act_night() override {
-        if (!is_alive()) return;
-        std::vector<int> candidates;
-        {
-            std::lock_guard lk(gs->gs_mtx);
-            for (auto &p: gs->players) if (p->is_alive() && p->id != id) candidates.push_back(p->id);
-        }
-        if (candidates.empty()) return;
-        std::uniform_int_distribution<int> d(0, (int)candidates.size()-1);
-        int probe = candidates[d(rng)];
-        gs->commissar_probe = probe;
-        logger->log_round("Комиссар " + name() + " проверил: " + std::to_string(probe));
-    }
-    int vote() override {
-        // простая логика
-        std::vector<int> candidates;
-        {
-            std::lock_guard lk(gs->gs_mtx);
-            for (auto &p: gs->players) if (p->is_alive() && p->id != id) candidates.push_back(p->id);
-        }
-        if (candidates.empty()) return id;
-        std::uniform_int_distribution<int> d(0, (int)candidates.size()-1);
-        int pick = candidates[d(rng)];
-        logger->log_round("Комиссар " + name() + " проголосовал за: " + std::to_string(pick));
-        return pick;
-    }
-};
-
-// Доктор — лечит ночью (предотвращает убийство)
-struct Doctor : BasePlayer {
-    Doctor(int id_, std::string nick): BasePlayer(id_, nick, RoleType::DOCTOR) {}
-    void act_night() override {
-        if (!is_alive()) return;
-        std::vector<int> candidates;
-        {
-            std::lock_guard lk(gs->gs_mtx);
-            for (auto &p: gs->players) if (p->is_alive()) candidates.push_back(p->id);
-        }
-        if (candidates.empty()) return;
-        std::uniform_int_distribution<int> d(0, (int)candidates.size()-1);
-        int heal = candidates[d(rng)];
-        gs->doctor_target = heal;
-        logger->log_round("Доктор " + name() + " лечит: " + std::to_string(heal));
-    }
-    int vote() override {
-        std::vector<int> candidates;
-        {
-            std::lock_guard lk(gs->gs_mtx);
-            for (auto &p: gs->players) if (p->is_alive() && p->id != id) candidates.push_back(p->id);
-        }
-        if (candidates.empty()) return id;
-        std::uniform_int_distribution<int> d(0, (int)candidates.size()-1);
-        int pick = candidates[d(rng)];
-        logger->log_round("Доктор " + name() + " проголосовал за: " + std::to_string(pick));
-        return pick;
-    }
-};
-
-// Маньяк — ночью может убивать самостоятельно
-struct Maniac : BasePlayer {
-    Maniac(int id_, std::string nick): BasePlayer(id_, nick, RoleType::MANIAC) {}
-    void act_night() override {
-        if (!is_alive()) return;
-        std::vector<int> candidates;
-        {
-            std::lock_guard lk(gs->gs_mtx);
-            for (auto &p: gs->players) if (p->is_alive() && p->id != id) candidates.push_back(p->id);
-        }
-        if (candidates.empty()) return;
-        std::uniform_int_distribution<int> d(0, (int)candidates.size()-1);
-        int t = candidates[d(rng)];
-        gs->maniac_target = t;
-        logger->log_round("Маньяк " + name() + " выбрал цель: " + std::to_string(t));
-    }
-    int vote() override {
-        std::vector<int> candidates;
-        {
-            std::lock_guard lk(gs->gs_mtx);
-            for (auto &p: gs->players) if (p->is_alive() && p->id != id) candidates.push_back(p->id);
-        }
-        if (candidates.empty()) return id;
-        std::uniform_int_distribution<int> d(0, (int)candidates.size()-1);
-        int pick = candidates[d(rng)];
-        logger->log_round("Маньяк " + name() + " проголосовал за: " + std::to_string(pick));
-        return pick;
+        commissar_action = false;
+        doctors_action = false;
+        journalist_action = false;
+        samurai_action = false;
     }
 };
 
 
-struct HumanPlayer : BasePlayer {
-    SharedPtr<BasePlayer> role_impl; // делегат на реальную роль (Mafia/Commissar/..)
-
-    HumanPlayer(int id_, std::string nick, SharedPtr<BasePlayer> impl)
-        : BasePlayer(id_, nick, impl->role), role_impl(std::move(impl)) {}
-
-    Task act_night() override {
-        co_await Yield{};
-        if (!is_alive()) co_return;
-        // Предлагаем опции в зависимости от роли
-        std::string prompt;
-        if (role == RoleType::MAFIA) {
-            prompt = "Твоя ночь (мафия). Введи id цели (или empty -> рандом): ";
-            std::string line = co_await InputAwaitable(prompt);
-            if (line.empty()) {
-                // делегируем AI выбор (вызов оригинальной реализации)
-                co_await role_impl->act_night();
-            } else {
-                int t = std::stoi(line);
-                role_impl->gs->mafia_target = t;
-                logger->log_round("Человек (мафия) выбрал цель: " + std::to_string(t));
-            }
-        } else if (role == RoleType::COMMISSAR) {
-            // выбор: probe или kill
-            std::string line = co_await InputAwaitable("Ты комиссар. Введи 'probe id' или 'kill id' (например: probe 3): ");
-            if (line.empty()) {
-                co_await role_impl->act_night();
-            } else {
-                std::istringstream iss(line);
-                std::string cmd; int tid;
-                iss >> cmd >> tid;
-                if (cmd=="kill") {
-                    role_impl->gs->commissar_target = tid;
-                    role_impl->gs->commissar_kill = true;
-                    logger->log_round("Человек (комиссар) ночью убил: " + std::to_string(tid));
-                } else {
-                    role_impl->gs->commissar_target = tid;
-                    role_impl->gs->commissar_kill = false;
-                    logger->log_round("Человек (комиссар) проверил: " + std::to_string(tid));
-                }
-            }
-        } else if (role == RoleType::DOCTOR) {
-            std::string line = co_await InputAwaitable("Ты доктор. Введи id для лечения (или empty -> рандом): ");
-            if (line.empty()) co_await role_impl->act_night();
-            else { int t = std::stoi(line); role_impl->gs->doctor_target = t; logger->log_round("Человек (доктор) лечит: " + std::to_string(t)); }
-        } else if (role == RoleType::MANIAC) {
-            std::string line = co_await InputAwaitable("Ты маньяк. Введи id цели (или empty -> рандом): ");
-            if (line.empty()) co_await role_impl->act_night();
-            else { int t = std::stoi(line); role_impl->gs->maniac_target = t; logger->log_round("Человек (маньяк) цель: " + std::to_string(t)); }
-        } else if (role == RoleType::CITIZEN) {
-            co_await Yield{};
-        }
-        co_return;
-    }
-
-    TaskT<int> vote() override {
-        co_await Yield{};
-        if (!is_alive()) co_return id;
-        std::string line = co_await InputAwaitable("Днём — введи id за кого голосуешь: ");
-        if (line.empty()) {
-            // случайный выбор
-            int pick = id;
-            std::vector<int> cand;
-            for (auto &p: gs->players) if (p->is_alive() && p->id!=id) cand.push_back(p->id);
-            if (!cand.empty()) { std::uniform_int_distribution<int> d(0,(int)cand.size()-1); pick = cand[d(rng)]; }
-            logger->log_round("Человек проголосовал случайно за " + std::to_string(pick));
-            co_return pick;
+class Player {
+public:
+    Player(size_t id_p) : id(id_p) {
+        alive = true;
+        is_real_player = false;
+        is_boss = false;
+    };
+    virtual ~Player() {};
+    virtual Task vote(std::vector<size_t> alive_ids, size_t& value) {
+        if (is_real_player) {
+            vote_player(alive_ids, value);
+            co_return;
         } else {
-            int pick = std::stoi(line);
-            logger->log_round("Человек проголосовал за " + std::to_string(pick));
-            co_return pick;
+            vote_ai(alive_ids, value);
+            co_return;
         }
+    }
+    virtual Task act(std::vector<size_t> alive_ids,
+                     NightActions& night_actions,
+                     std::vector<Shared_pointer<Player>> players) {
+        if (is_real_player) {
+            act_player(alive_ids, night_actions, players);
+            co_return;
+        } else {
+            act_ai(alive_ids, night_actions, players);
+            co_return;
+        }
+    }
+    virtual void vote_ai(std::vector<size_t>& alive_ids, size_t& value) = 0;
+    virtual void vote_player(std::vector<size_t>& alive_ids, size_t& value) {
+        std::cout << "Voting! Choose which candidate to vote for from the following:" << std::endl;
+        for (auto i : alive_ids) {
+            std::cout << i << " ";
+        }
+        std::cout << std::endl;
+        size_t res;
+        std::cin >> res;
+        value = res;
+        return;
+    }
+    virtual void act_ai(std::vector<size_t>& alive_ids,
+                        NightActions& night_actions,
+                        std::vector<Shared_pointer<Player>> players) = 0;
+    virtual void act_player(std::vector<size_t>& alive_ids,
+                            NightActions& night_actions,
+                            std::vector<Shared_pointer<Player>> players) = 0;
+
+    bool alive;
+    bool is_real_player;
+    bool is_boss;
+    size_t id;
+    std::vector<size_t> known_mafia{};
+    std::string team;
+    std::string role;
+};
+
+class Civilian : public Player {
+public:
+    Civilian(size_t id_p) : Player(id_p) {
+        team = "civilian";
+        role = "civilian";
+    }
+    virtual ~Civilian() {};
+
+    virtual void vote_ai(std::vector<size_t>& alive_ids, size_t& value) override {
+        simple_shuffle(alive_ids);
+        size_t i = 0;
+        while (i < alive_ids.size()) {
+            if (alive_ids[i] != id) {
+                value = alive_ids[i];
+                return;
+            }
+            i++;
+        }
+        value = 0;
+        return;
+    }
+    virtual void act_ai(std::vector<size_t>&, NightActions&, std::vector<Shared_pointer<Player>>) override {
+        return;
+    }
+    virtual void act_player(std::vector<size_t>&, NightActions&, std::vector<Shared_pointer<Player>>) override {
+        return;
     }
 };
 
-
-// ===========================
-// Вспомогательные функции
-// ===========================
-std::string role_to_str(RoleType r) {
-    switch(r){
-        case RoleType::MAFIA: return "Mafia";
-        case RoleType::CITIZEN: return "Citizen";
-        case RoleType::COMMISSAR: return "Commissar";
-        case RoleType::DOCTOR: return "Doctor";
-        case RoleType::MANIAC: return "Maniac";
-        default: return "Unknown";
+class Commissar : public Civilian {
+    std::vector<size_t> already_checked;
+    std::vector<size_t> known_civilian;
+public:
+    Commissar(size_t id_p) : Civilian(id_p) {
+        already_checked = {id};
+        known_civilian = {id};
+        role = "commissar";
     }
-}
+    virtual ~Commissar() {};
 
-int count_alive(const GameState &gs) {
-    int c = 0;
-    for (auto &p: gs.players) if (p->is_alive()) ++c;
-    return c;
-}
-
-int count_role_alive(const GameState &gs, RoleType rt) {
-    int c = 0;
-    for (auto &p: gs.players) if (p->is_alive() && p->role==rt) ++c;
-    return c;
-}
-
-// ===========================
-// Модератор / Ведущий
-// ===========================
-struct Moderator {
-    SharedPtr<GameState> gs;
-    Logger *logger;
-    bool human_player = false;
-    int human_id = -1;
-
-    Moderator(SharedPtr<GameState> gs_, Logger *log): gs(gs_), logger(log) {}
-
-    void run_game(bool full_log=false) {
-        logger->start_round();
+    virtual void vote_ai(std::vector<size_t>& alive_ids, size_t& value) override {
+        simple_shuffle(alive_ids);
+        for (size_t i = 0; i < known_mafia.size(); i++) {
+            if (std::find(alive_ids.begin(), alive_ids.end(), known_mafia[i]) != alive_ids.end()) {
+                value = known_mafia[i];
+                return;
+            }
+        }
+        Civilian::vote_ai(alive_ids, value);
+        return;
+    }
+    virtual void act_ai(std::vector<size_t>& alive_ids,
+                        NightActions& night_actions,
+                        std::vector<Shared_pointer<Player>> players) override {
+        for (size_t i = 0; i < known_mafia.size(); i++) {
+            if (std::find(alive_ids.begin(), alive_ids.end(), known_mafia[i]) != alive_ids.end()) {
+                night_actions.killers[known_mafia[i]].push_back(id);
+                return;
+            }
+        }
+        auto max_id = *std::max_element(alive_ids.begin(), alive_ids.end());
+        for (size_t i = 0; i <= max_id; i++) {
+            if (std::find(already_checked.begin(), already_checked.end(), i) == already_checked.end()) {
+                already_checked.push_back(i);
+                if (players[i]->team == "mafia") {
+                    known_mafia.push_back(i);
+                } else {
+                    known_civilian.push_back(i);
+                }
+                night_actions.commissar_action = true;
+                night_actions.commissar_choice = i;
+                return;
+            }
+        }
+        return;
+    }
+    virtual void act_player(std::vector<size_t>& alive_ids,
+                            NightActions& night_actions,
+                            std::vector<Shared_pointer<Player>> players) override {
         while (true) {
-            gs->day++;
-            logger->start_round();
-            logger->log_round("=== Ночь " + std::to_string(gs->day) + " начинается ===");
-            // ночь: все живые выполняют act_night (в отдельных нитях)
-            std::vector<std::thread> threads;
-            {
-                std::lock_guard lk(gs->gs_mtx);
-                for (auto &p : gs->players) {
-                    if (!p->is_alive()) continue;
-                    threads.emplace_back([p](){
-                        p->act_night();
-                    });
-                }
+            std::cout << "Choose an action: shoot (s) or check (c)." << std::endl;
+            std::string choice;
+            std::cin >> choice;
+            std::cout << "Choose one of:" << std::endl;
+            for (auto i : alive_ids) {
+                std::cout << i << " ";
             }
-            for (auto &t: threads) if (t.joinable()) t.join();
-            // ночные результаты
-            resolve_night();
-
-            if (check_end()) break;
-
-            // день: голосование
-            logger->log_round("=== День " + std::to_string(gs->day) + " — голосование ===");
-            gs->votes.clear();
-            {
-                std::lock_guard lk(gs->gs_mtx);
-                for (auto &p: gs->players) if (p->is_alive()) {
-                    int picked = p->vote();
-                    gs->votes[picked]++;
-                }
-            }
-            // подсчёт голосов
-            int maxvotes = 0;
-            int kicked = -1;
-            for (auto &kv: gs->votes) {
-                if (kv.second > maxvotes) { maxvotes = kv.second; kicked = kv.first; }
-            }
-            if (kicked != -1) {
-                // убиваем игрока с id == kicked (если он жив)
-                std::lock_guard lk(gs->gs_mtx);
-                for (auto &p: gs->players) {
-                    if (p->id == kicked && p->is_alive()) {
-                        p->alive = false;
-                        logger->log_round("Игрок " + p->name() + " был изгнан голосованием. Роль: " + role_to_str(p->role));
-                    }
-                }
+            std::cout << std::endl;
+            size_t shoot_check;
+            std::cin >> shoot_check;
+            if (choice == "shoot" || choice == "s") {
+                night_actions.killers[shoot_check].push_back(id);
+                return;
+            } else if (choice == "check" || choice == "c") {
+                std::cout << "Player " << shoot_check << " is "
+                          << ((players[shoot_check]->team == "mafia") ? "mafia" : "not mafia") << std::endl;
+                night_actions.commissar_action = true;
+                night_actions.commissar_choice = shoot_check;
+                return;
             } else {
-                logger->log_round("Никого не изгнали (ничья).");
-            }
-
-            if (check_end()) break;
-        }
-        // итог
-        logger->log_summary("Игра закончена. День: " + std::to_string(gs->day));
-        // summary roles
-        for (auto &p: gs->players) {
-            logger->log_summary(p->name() + " role=" + role_to_str(p->role) + " alive=" + (p->is_alive() ? "1" : "0"));
-        }
-    }
-
-    void resolve_night() {
-        std::lock_guard lk(gs->gs_mtx);
-        logger->log_round("Ночные цели: mafia->" + (gs->mafia_target ? std::to_string(*gs->mafia_target) : std::string("none"))
-                                         + " doctor->" + (gs->doctor_target ? std::to_string(*gs->doctor_target) : std::string("none"))
-                                         + " maniac->" + (gs->maniac_target ? std::to_string(*gs->maniac_target) : std::string("none"))
-                                         + " commissar->" + (gs->commissar_probe ? std::to_string(*gs->commissar_probe) : std::string("none")));
-        // приоритет/логика:
-        // 1) если доктор лечит выбранную мафией цель, убийство предотвращается
-        // 2) маньяк действует независимо (может убить того, кого доктор лечит)
-        std::optional<int> night_victim;
-        if (gs->mafia_target) night_victim = *gs->mafia_target;
-        // маньяк
-        if (gs->maniac_target) {
-            // если маньяк выбрал цель, она также умирает (если не лечат)
-            if (!night_victim) night_victim = *gs->maniac_target;
-            else {
-                // оба выбрали — считаем, что обе попытки приводят к смерти цели (при наличии лечения)
-                // для простоты: мафия цель и маньяк цель обрабатываются отдельно ниже
+                std::cout << "Incorrect action!" << std::endl;
             }
         }
-
-        // убиваем мафией цель, если доктор не лечил её
-        if (gs->mafia_target) {
-            int t = *gs->mafia_target;
-            if (!(gs->doctor_target && *gs->doctor_target == t)) {
-                for (auto &p: gs->players) {
-                    if (p->id == t && p->is_alive()) {
-                        p->alive = false;
-                        logger->log_round("Игрок " + p->name() + " был убит ночью (мафия). Роль: " + role_to_str(p->role));
-                    }
-                }
-            } else {
-                logger->log_round("Доктор спас игрока " + std::to_string(t) + " от мафии.");
-            }
-        }
-
-        // маньяк
-        if (gs->maniac_target) {
-            int t = *gs->maniac_target;
-            if (!(gs->doctor_target && *gs->doctor_target == t)) {
-                for (auto &p: gs->players) {
-                    if (p->id == t && p->is_alive()) {
-                        p->alive = false;
-                        logger->log_round("Игрок " + p->name() + " был убит ночью (маньяк). Роль: " + role_to_str(p->role));
-                    }
-                }
-            } else {
-                logger->log_round("Доктор спас игрока " + std::to_string(t) + " от маньяка.");
-            }
-        }
-
-        // комиссар: раскрываем роль проверенной цели
-        if (gs->commissar_probe) {
-            int t = *gs->commissar_probe;
-            for (auto &p: gs->players) if (p->id == t) {
-                logger->log_round("Комиссар узнал роль игрока " + p->name() + " : " + role_to_str(p->role));
-            }
-        }
-
-        // обнуляем ночные цели
-        gs->mafia_target.reset(); gs->doctor_target.reset(); gs->commissar_probe.reset(); gs->maniac_target.reset();
-    }
-
-    bool check_end() {
-        // Победа мафии — когда они равны по численности мирным (или больше)
-        int mafia_alive = count_role_alive(*gs, RoleType::MAFIA);
-        int others_alive = count_alive(*gs) - mafia_alive;
-        if (mafia_alive == 0) {
-            logger->log_summary("Победа мирных. Мафия уничтожена.");
-            return true;
-        }
-        if (mafia_alive >= others_alive) {
-            logger->log_summary("Победа мафии.");
-            return true;
-        }
-        // маньяк может выиграть сам — если остался один живой и он маньяк
-        int alive_total = count_alive(*gs);
-        if (alive_total == 1) {
-            for (auto &p: gs->players) if (p->is_alive() && p->role == RoleType::MANIAC) {
-                logger->log_summary("Победа маньяка.");
-                return true;
-            }
-        }
-        return false;
     }
 };
 
-// ===========================
-// Конфигурация YAML (очень простой парсер)
-// ===========================
-struct Config {
-    // map role_name -> count (if count==0 -> auto)
-    std::map<std::string,int> roles;
-    bool human = false;
-    bool full_log = false;
+
+class Doctor : public Civilian {
+    size_t last_heal;
+public:
+    Doctor(size_t id_p) : Civilian(id_p) {
+        role = "doctor";
+        last_heal = std::numeric_limits<size_t>::max();
+    }
+    virtual ~Doctor() {}
+
+    virtual void act_ai(std::vector<size_t>& alive_ids,
+                        NightActions& night_actions,
+                        std::vector<Shared_pointer<Player>>) override {
+        simple_shuffle(alive_ids);
+        for (size_t i = 0; i < alive_ids.size(); i++) {
+            if (alive_ids[i] != last_heal) {
+                night_actions.doctors_action = true;
+                night_actions.doctors_choice = alive_ids[i];
+                last_heal = alive_ids[i];
+                return;
+            }
+        }
+    }
+    virtual void act_player(std::vector<size_t>& alive_ids,
+                            NightActions& night_actions,
+                            std::vector<Shared_pointer<Player>>) override {
+        std::cout << "Who do you want to heal?" << std::endl
+                  << "Choose one of:" << std::endl;
+        for (auto i : alive_ids) {
+            std::cout << i << " ";
+        }
+        std::cout << std::endl;
+        std::cout << "But it shouldn't be the same player you healed last time." << std::endl;
+        while (true) {
+            size_t choice;
+            std::cin >> choice;
+            if (last_heal == choice) {
+                std::cout << "You already healed this player last time." << std::endl;
+                continue;
+            } else {
+                night_actions.doctors_action = true;
+                night_actions.doctors_choice = choice;
+                last_heal = choice;
+                return;
+            }
+        }
+    }
 };
 
-Config load_config(const fs::path &p) {
-    Config c;
-    if (!fs::exists(p)) return c;
-    std::ifstream in(p);
-    std::string line;
-    while (std::getline(in, line)) {
-        std::string s = line;
-        // trim
-        while(!s.empty() && isspace((unsigned char)s.back())) s.pop_back();
-        while(!s.empty() && isspace((unsigned char)s.front())) s.erase(s.begin());
-        if (s.empty() || s[0]=='#' || s[0]=='-') continue;
-        // простой парсинг вида: key: value
-        auto pos = s.find(':');
-        if (pos==std::string::npos) continue;
-        std::string key = s.substr(0,pos);
-        std::string val = s.substr(pos+1);
-        // trim
-        while(!key.empty() && isspace((unsigned char)key.back())) key.pop_back();
-        while(!key.empty() && isspace((unsigned char)key.front())) key.erase(key.begin());
-        while(!val.empty() && isspace((unsigned char)val.back())) val.pop_back();
-        while(!val.empty() && isspace((unsigned char)val.front())) val.erase(val.begin());
-        if (key == "human") c.human = (val == "true" || val == "1" || val=="yes");
-        else if (key == "full_log") c.full_log = (val == "true" || val == "1" || val=="yes");
-        else {
-            // role: N
-            try {
-                int cnt = std::stoi(val);
-                c.roles[key] = cnt;
-            } catch(...) {
-                c.roles[key] = 0;
+
+class Journalist : public Civilian {
+public:
+    Journalist(size_t id_p) : Civilian(id_p) {
+        role = "journalist";
+    }
+    virtual ~Journalist() {}
+
+    virtual void act_ai(std::vector<size_t>& alive_ids,
+                        NightActions& night_actions,
+                        std::vector<Shared_pointer<Player>>) override {
+        simple_shuffle(alive_ids);
+        for (size_t i = 0; i < alive_ids.size() - 1; i++) {
+            for (size_t j = i + 1; j < alive_ids.size(); j++) {
+                if (i != id && j != id) {
+                    night_actions.journalist_action = true;
+                    night_actions.journalist_choice = {i, j};
+                }
             }
         }
     }
-    return c;
-}
-
-// ===========================
-// Фабрика ролей по имени
-// ===========================
-SharedPtr<BasePlayer> make_role(int id, const std::string &name, const std::string &role_name) {
-    if (role_name == "Mafia") return std::make_shared<Mafia>(id, name);
-    if (role_name == "Citizen") return std::make_shared<Citizen>(id, name);
-    if (role_name == "Commissar") return std::make_shared<Commissar>(id, name);
-    if (role_name == "Doctor") return std::make_shared<Doctor>(id, name);
-    if (role_name == "Maniac") return std::make_shared<Maniac>(id, name);
-    // default
-    return std::make_shared<Citizen>(id, name);
-}
-
-// ===========================
-// Main: сборка игроков, запуск
-// ===========================
-int main(int argc, char** argv) {
-    int N = 10;
-    int K = 3; // N/k -> mafia count
-    bool human = false;
-    bool full_log = false;
-    fs::path cfgpath = "config.yaml";
-
-    // простой парсинг аргументов
-    for (int i=1;i<argc;i++){
-        std::string a = argv[i];
-        if (a=="-n" && i+1<argc) N = std::stoi(argv[++i]);
-        else if (a=="-k" && i+1<argc) K = std::stoi(argv[++i]);
-        else if (a=="--human") human = true;
-        else if (a=="--logfull") full_log = true;
-        else if (a=="--config" && i+1<argc) cfgpath = argv[++i];
-    }
-
-    Config cfg = load_config(cfgpath);
-    if (cfg.human) human = true;
-    if (cfg.full_log) full_log = true;
-
-    Logger logger("logs");
-    auto gs = std::make_shared<GameState>(N);
-    gs->logger = &logger;
-
-    // Формируем роли: базовый набор
-    std::vector<std::string> role_pool;
-    // если cfg.roles заполнен — используем его, иначе дефолт
-    if (!cfg.roles.empty()) {
-        // cfg.roles may specify counts; if count==0 — auto-fill as citizens
-        for (auto &kv: cfg.roles) {
-            const std::string &rname = kv.first;
-            int cnt = kv.second;
-            if (cnt > 0) {
-                for (int i=0;i<cnt;i++) role_pool.push_back(rname);
+    virtual void act_player(std::vector<size_t>& alive_ids,
+                            NightActions& night_actions,
+                            std::vector<Shared_pointer<Player>> players) override {
+        std::cout << "Choose two of:" << std::endl;
+        for (auto i : alive_ids) {
+            std::cout << i << " ";
+        }
+        std::cout << std::endl;
+        std::cout << "Who do you want to check?" << std::endl
+                  << "But it shouldn't be you." << std::endl;
+        while (true) {
+            size_t i, j;
+            std::cin >> i >> j;
+            if (i != id && j != id) {
+                if (players[i]->team == players[j]->team) {
+                    std::cout << "These players are from the same team" << std::endl;
+                } else {
+                    std::cout << "These players are from different teams" << std::endl;
+                }
+                night_actions.journalist_action = true;
+                night_actions.journalist_choice = {i, j};
+                return;
+            } else {
+                std::cout << "It shouldn't be you!" << std::endl;
+                continue;
             }
         }
-    } else {
-        // default minimal composition: will set precise counts below
+    }
+};
+
+
+class Samurai : public Civilian {
+public:
+    Samurai(size_t id_p) : Civilian(id_p) {
+        role = "samurai";
+    }
+    virtual ~Samurai() {}
+
+    virtual void act_ai(std::vector<size_t>& alive_ids,
+                        NightActions& night_actions,
+                        std::vector<Shared_pointer<Player>>) override {
+        simple_shuffle(alive_ids);
+        for (size_t i = 0; i < alive_ids.size(); i++) {
+            night_actions.samurai_action = true;
+            night_actions.samurai_choice = i;
+        }
+    }
+    virtual void act_player(std::vector<size_t>& alive_ids,
+                            NightActions& night_actions,
+                            std::vector<Shared_pointer<Player>>) override {
+        std::cout << "Who do you want to protect?" << std::endl
+                  << "Choose one of:" << std::endl;
+        for (auto i : alive_ids) {
+            std::cout << i << " ";
+        }
+        std::cout << std::endl;
+        size_t choice;
+        std::cin >> choice;
+        night_actions.samurai_action = true;
+        night_actions.samurai_choice = choice;
+    }
+};
+
+
+class Mafia : public Player {
+public:
+    Mafia(size_t id_p) : Player(id_p) {
+        team = "mafia";
+        role = "mafia";
+    }
+    virtual ~Mafia() {}
+
+    virtual void vote_ai(std::vector<size_t>& alive_ids, size_t& value) override {
+        simple_shuffle(alive_ids);
+        size_t i = 0;
+        while (i < alive_ids.size()) {
+            if (std::find(known_mafia.begin(), known_mafia.end(), alive_ids[i]) == known_mafia.end()) {
+                value = alive_ids[i];
+                return;
+            }
+            i++;
+        }
+        value = 0;
+        return;
+    }
+    virtual void act_ai(std::vector<size_t>& alive_ids,
+                        NightActions& night_actions,
+                        std::vector<Shared_pointer<Player>>) override {
+        if (is_boss) {
+            simple_shuffle(alive_ids);
+            size_t i = 0;
+            while (i < alive_ids.size()) {
+                if (std::find(known_mafia.begin(), known_mafia.end(), alive_ids[i]) == known_mafia.end()) {
+                    night_actions.killers[alive_ids[i]].push_back(id);
+                    return;
+                }
+                i++;
+            }
+        }
+    }
+    virtual void act_player(std::vector<size_t>& alive_ids,
+                            NightActions& night_actions,
+                            std::vector<Shared_pointer<Player>>) override {
+        std::cout << "Mafia:" << std::endl;
+        for (auto i : known_mafia) {
+            std::cout << i << " ";
+        }
+        std::cout << std::endl;
+        if (is_boss) {
+            std::cout << "You are a mafia boss. Who will the mafia kill on your orders?" << std::endl
+                      << "Choose one of:" << std::endl;
+            for (auto i : alive_ids) {
+                std::cout << i << " ";
+            }
+            std::cout << std::endl;
+            size_t choice;
+            std::cin >> choice;
+            night_actions.killers[choice].push_back(id);
+        } else {
+            std::cout << "You are not a mafia boss. Tonight you will not decide who the mafia will kill." << std::endl;
+        }
+    }
+};
+
+
+class Bull : public Mafia {
+public:
+    Bull(size_t id_p) : Mafia(id_p) {
+        role = "bull";
+    }
+    virtual ~Bull() {}
+};
+
+
+class Maniac : public Player {
+public:
+    Maniac(size_t id_p) : Player(id_p) {
+        team = "maniac";
+        role = "maniac";
+    }
+    virtual ~Maniac() {};
+
+    virtual void vote_ai(std::vector<size_t>& alive_ids, size_t& value) override {
+        simple_shuffle(alive_ids);
+        size_t i = 0;
+        while (i < alive_ids.size()) {
+            if (alive_ids[i] != id) {
+                value = alive_ids[i];
+                return;
+            }
+            i++;
+        }
+        value = 0;
+        return;
+    }
+    virtual void act_ai(std::vector<size_t>& alive_ids,
+                        NightActions& night_actions,
+                        std::vector<Shared_pointer<Player>>) override {
+        simple_shuffle(alive_ids);
+        size_t i = 0;
+        while (i < alive_ids.size()) {
+            if (alive_ids[i] != id) {
+                night_actions.killers[alive_ids[i]].push_back(id);
+                return;
+            }
+            i++;
+        }
+    }
+    virtual void act_player(std::vector<size_t>& alive_ids,
+                            NightActions& night_actions,
+                            std::vector<Shared_pointer<Player>>) override {
+        std::cout << "Choose one of:" << std::endl;
+        for (auto i : alive_ids) {
+            std::cout << i << " ";
+        }
+        std::cout << std::endl;
+        size_t choice;
+        std::cin >> choice;
+        night_actions.killers[choice].push_back(id);
+    }
+};
+
+
+
+template<typename T>
+concept PlayerConcept = requires(T player,
+                                 std::vector<size_t> ids,
+                                 size_t value,
+                                 NightActions night_actions,
+                                 std::vector<Shared_pointer<Player>> players) {
+    { player.vote(ids, value) } -> std::same_as<Task>;
+    { player.act(ids, night_actions, players) } -> std::same_as<Task>;
+};
+
+
+template<PlayerConcept Player>
+class Game {
+public:
+    Logger* logger;
+    std::vector<Shared_pointer<Player>> players {};
+    unsigned int players_num;
+    unsigned int mafia_modifier;
+    std::vector<std::string> civilian_roles {"commissar", "doctor", "journalist", "samurai"};
+    std::vector<std::string> mafia_roles {"bull"};
+    size_t samurai_id;
+    size_t bull_id;
+// "civilian", "mafia", "maniac"
+
+    explicit Game(unsigned int players_num_, unsigned int mafia_modifier_ = 3) :
+        players_num(players_num_),
+        mafia_modifier(mafia_modifier_)
+    {}
+
+    void add_random_roles(
+            std::vector<std::string> roles,
+            size_t limit,
+            std::string default_role,
+            std::vector<std::string>& result) {
+        std::mt19937 g(rand());
+        size_t i = 0;
+        std::shuffle(roles.begin(), roles.end(), g);
+        while (i < limit) {
+            if (i < roles.size()) {
+                result.push_back(roles[i]);
+            } else {
+                result.push_back(default_role);
+            }
+            i++;
+        }
     }
 
-    // compute mafia count
-    int mafia_count = std::max(1, N / K);
+    std::vector<std::string> get_random_roles() {
+        unsigned int mafia_num = players_num / mafia_modifier;
+        std::vector<std::string> random_roles;
 
-    // ensure required roles are present: Commissar, Doctor, Maniac (one each)
-    // We'll create the list of role names and then shuffle/assign.
-    std::vector<std::string> roles;
-    roles.reserve(N);
-    // put mafia_count mafias
-    for (int i=0;i<mafia_count;i++) roles.push_back("Mafia");
-    // mandatory roles
-    roles.push_back("Commissar");
-    roles.push_back("Doctor");
-    roles.push_back("Maniac");
-    // rest citizens
-    while ((int)roles.size() < N) roles.push_back("Citizen");
-
-    // If YAML provided explicit roles counts (some may be extra roles), fill them too:
-    if (!role_pool.empty()) {
-        // replace first role_pool.size() entries by role_pool (or append)
-        roles.clear();
-        for (auto &r: role_pool) roles.push_back(r);
-        while ((int)roles.size() < N) roles.push_back("Citizen");
+        // for (auto a : buf) std::cout << a << " "; std::cout << std::endl;
+        add_random_roles(mafia_roles, mafia_num, "mafia", random_roles);
+        random_roles.push_back("maniac");
+        add_random_roles(civilian_roles, players_num - mafia_num - 1, "civilian", random_roles);
+        std::mt19937 g(rand());
+        std::shuffle(random_roles.begin(), random_roles.end(), g);
+        return random_roles;
     }
 
-    std::shuffle(roles.begin(), roles.end(), rng);
+    void init_players(std::vector<std::string> roles) {
+        players.clear();
+        logger = new Logger{"init.log"};
+        logger->log(Loglevel::INFO, "--- INIT ---");
 
-    // create players
-    for (int i=0;i<N;i++) {
-        std::string nick = "P" + std::to_string(i+1);
-        auto p = make_role(i+1, nick, roles[i]);
-        p->gs = gs;
-        p->logger = &logger;
-        gs->players.push_back(p);
+        std::cout << "Do you want to play? Select the number of the player (from 0 to " << roles.size() - 1
+                  << ") you want to play or -1 if you don't want to." << std::endl;
+        int choice;
+        std::cin >> choice;
+        std::vector<size_t> mafia_buf{};
+        for (size_t i = 0; i < roles.size(); i++) {
+            auto role = roles[i];
+            if (role == "civilian") {
+                logger->log(Loglevel::INFO,
+                        TPrettyPrinter().f("Player ").f(i).f(" is civilian").Str());
+                players.push_back(Shared_pointer<Player>(new Civilian{i}));
+            } else if (role == "mafia") {
+                logger->log(Loglevel::INFO,
+                        TPrettyPrinter().f("Player ").f(i).f(" is mafia").Str());
+                mafia_buf.push_back(i);
+                players.push_back(Shared_pointer<Player>(new Mafia{i}));
+            } else if (role == "maniac") {
+                logger->log(Loglevel::INFO,
+                        TPrettyPrinter().f("Player ").f(i).f(" is maniac").Str());
+                players.push_back(Shared_pointer<Player>(new Maniac{i}));
+            } else if (role == "bull") {
+                logger->log(Loglevel::INFO,
+                        TPrettyPrinter().f("Player ").f(i).f(" is bull").Str());
+                players.push_back(Shared_pointer<Player>(new Bull{i}));
+                mafia_buf.push_back(i);
+                bull_id = i;
+            } else if (role == "commissar") {
+                logger->log(Loglevel::INFO,
+                        TPrettyPrinter().f("Player ").f(i).f(" is commissar").Str());
+                players.push_back(Shared_pointer<Player>(new Commissar{i}));
+            } else if (role == "doctor") {
+                logger->log(Loglevel::INFO,
+                        TPrettyPrinter().f("Player ").f(i).f(" is doctor").Str());
+                players.push_back(Shared_pointer<Player>(new Doctor{i}));
+            } else if (role == "journalist") {
+                logger->log(Loglevel::INFO,
+                        TPrettyPrinter().f("Player ").f(i).f(" is journalist").Str());
+                players.push_back(Shared_pointer<Player>(new Journalist{i}));
+            } else if (role == "samurai") {
+                logger->log(Loglevel::INFO,
+                        TPrettyPrinter().f("Player ").f(i).f(" is samurai").Str());
+                players.push_back(Shared_pointer<Player>(new Samurai{i}));
+                samurai_id = i;
+            }
+            if (std::cmp_equal(choice, i)) {
+                players[i]->is_real_player = true;
+                std::cout << "You are " << players[i]->role << "!" << std::endl;
+                if (players[i]->role == "samurai") {
+                    std::cout << "Wake up, Samurai! We have a city to burn!" << std::endl;
+                }
+            }
+        }
+        for (auto i : mafia_buf) {
+            players[i]->known_mafia.insert(players[i]->known_mafia.end(), mafia_buf.begin(),
+                    mafia_buf.end());
+        }
+        simple_shuffle(mafia_buf);
+        players[mafia_buf[0]]->is_boss = true;
+        delete logger;
     }
 
-    // print composition
-    {
-        std::string s = "Состав игроков:";
-        for (auto &p: gs->players) s += " " + p->name() + "[" + role_to_str(p->role) + "]";
-        log_console(s);
-        logger.log_summary(s);
+    void reelection_mafia_boss() {
+        auto mafia = players |
+                     view::filter([](auto p) { return p->alive; }) |
+                     view::filter([](auto p) { return p->team == "mafia"; });
+        if (!mafia.empty() &&
+                (mafia | view::filter([](auto p) { return p->is_boss; })).empty()) {
+            std::vector<Shared_pointer<Player>> mafia_vec{mafia.begin(), mafia.end()};
+            simple_shuffle(mafia_vec);
+            mafia_vec[0]->is_boss = true;
+        }
     }
 
-    Moderator mod(gs, &logger);
-    mod.human_player = human;
+    std::string game_status() {
+        auto alives = players | view::filter([](auto p) { return p->alive; });
+        if (alives.empty()) {
+            // Everyone die
+            return "draw";
+        } else {
+            auto mafia = alives | view::filter([](auto p) { return p->team == "mafia"; });
+            if (mafia.empty()) {
+                // Mafia die
+                if ((alives | view::filter([](auto p) { return p->team == "maniac"; })).empty()) {
+                    // Maniac die
+                    return "civilian";
+                } else {
+                    // Maniac is alive
+                    if (std::ranges::distance(alives) >= 3) {
+                        return "continue";
+                    } else {
+                        return "maniac";
+                    }
+                }
+            } else {
+                // Mafia is alive
+                if ((alives | view::filter([](auto p) { return p->team == "maniac"; })).empty()) {
+                    // Maniac die
+                    auto alives_num = std::ranges::distance(alives);
+                    auto mafia_num = std::ranges::distance(mafia);
+                    if (alives_num <= mafia_num * 2) {
+                        return "mafia";
+                    } else {
+                        return "continue";
+                    }
+                } else {
+                    // Maniac is alive
+                    return "continue";
+                }
+            }
+        }
+    }
 
-    // Привяжем логгер к каждому игроку
-    for (auto &p: gs->players) p->logger = &logger;
 
-    // Запуск игры
-    mod.run_game(full_log);
+    void main_loop() {
+        unsigned int day_number = 0;
+        std::string cur_status = "";
+        while (true) {
+            logger = new Logger{"day_" + std::to_string(day_number) + ".log"};
+            logger->log(Loglevel::INFO, "--- DAY " + std::to_string(day_number) + " ---");
+            day_vote();
+            reelection_mafia_boss();
+            cur_status = game_status();
+            if (cur_status != "continue") {
+                delete logger;
+                break;
+            }
+            night_act();
+            reelection_mafia_boss();
+            cur_status = game_status();
+            if (cur_status != "continue") {
+                delete logger;
+                break;
+            }
+            day_number++;
+            delete logger;
+        }
+        logger = new Logger{"result.log"};
+        if (cur_status == "draw") {
+            logger->log(Loglevel::INFO, "No one survived the brutal shootouts and nighttime murders... The city died out...");
+            logger->log(Loglevel::INFO, "DRAW!");
+            logger->log(Loglevel::INFO, "Alives: ---");
+            delete logger;
+            return;
+        }
+        if (cur_status == "mafia") {
+            logger->log(Loglevel::INFO, "The mafia has taken over this city and no one can stop them anymore. The mafia never dies!");
+            logger->log(Loglevel::INFO, "MAFIA WIN");
+        } else if (cur_status == "maniac") {
+            logger->log(Loglevel::INFO, "Neither the mafia, nor the peaceful civilian, nor the sheriff could stop the crazy loner in the night...");
+            logger->log(Loglevel::INFO, "MANIAC WINS");
+        } else if (cur_status == "civilian") {
+            logger->log(Loglevel::INFO, "The city sleeps peacefully. The citizens united and fought back against the mafia and the maniac.");
+            logger->log(Loglevel::INFO, "CIVILIANS WIN");
+        }
+        logger->log(Loglevel::INFO, "Alives:");
+        for (const auto& player : players) {
+            if (player->alive) {
+                logger->log(Loglevel::INFO, TPrettyPrinter().f("Player ").f(player->id).f(" - ").f(player->role).Str());
+            }
+        }
+        delete logger;
+    }
 
-    log_console("Игра завершена. Логи в папке logs/");
+    void day_vote() {
+        auto alives = players | view::filter([](auto p) { return p->alive; });
+        auto alives_ids_rng = alives | view::transform([](auto p) { return p->id; });
+        std::vector<size_t> alives_ids{alives_ids_rng.begin(), alives_ids_rng.end()};
+        std::map<size_t, unsigned int> votes{};
+        for (auto id: alives_ids) {
+            votes[id] = 0;
+        }
+
+        std::vector<Shared_pointer<Player>> sh_alives{alives.begin(), alives.end()};
+        simple_shuffle(sh_alives);
+        for (const auto& player : sh_alives) {
+            size_t value = 0;
+            player->vote(alives_ids, value);
+            votes[value]++;
+            logger->log(Loglevel::INFO,
+                    TPrettyPrinter().f("Player ").f(player->id).f(" voted for player ").f(value).Str());
+        }
+
+        auto key_val = std::max_element(votes.begin(), votes.end(),
+                [](const std::pair<int, int>& p1, const std::pair<int, int>& p2) {
+                    return p1.second < p2.second;
+                });
+        players[key_val->first]->alive = false;
+        logger->log(Loglevel::INFO,
+                TPrettyPrinter().f("Player ").f(key_val->first).f(" was executed by order of the city.").Str());
+    }
+
+    void night_act() {
+        auto alives = players | view::filter([](auto p) { return p->alive; });
+        auto alives_ids_rng = alives | view::transform([](auto p) { return p->id; });
+        std::vector<size_t> alives_ids{alives_ids_rng.begin(), alives_ids_rng.end()};
+        NightActions night_actions{players_num};
+        night_actions.reset();
+
+        for (const auto& player : alives) {
+            player->act(alives_ids, night_actions, players);
+        }
+
+        // Bull avoid maniac's attempt to kill him
+        for (size_t i = 0; i < night_actions.killers[bull_id].size(); i++) {
+            auto killer_id = night_actions.killers[bull_id][i];
+            if (players[killer_id]->role == "maniac") {
+                night_actions.killers[bull_id].erase(night_actions.killers[bull_id].begin() + i);
+                break;
+            }
+        }
+        if (night_actions.commissar_action) {
+            logger->log(Loglevel::INFO, TPrettyPrinter().f("Commissar checked player ").f(night_actions.commissar_choice).f(
+                        ". He was a ").f(players[night_actions.commissar_choice]->role).Str());
+        }
+        if (night_actions.doctors_action) {
+            logger->log(Loglevel::INFO, TPrettyPrinter().f("Doctor healed player ").f(night_actions.doctors_choice).Str());
+            night_actions.killers[night_actions.doctors_choice].clear();
+        }
+        if (night_actions.journalist_action) {
+            logger->log(Loglevel::INFO, TPrettyPrinter().f("Journalist checked players ").f(
+                        night_actions.journalist_choice.first).f(" and ").f(
+                        night_actions.journalist_choice.second).Str());
+        }
+        if (night_actions.samurai_action) {
+            logger->log(Loglevel::INFO, TPrettyPrinter().f("Samurai protected player ").f(night_actions.samurai_choice).Str());
+            auto& killers_list = night_actions.killers[night_actions.samurai_choice];
+            if (!killers_list.empty()) {
+                simple_shuffle(killers_list);
+                night_actions.killers[killers_list[0]].push_back(samurai_id);
+                night_actions.killers[samurai_id].push_back(samurai_id);
+                night_actions.killers[night_actions.samurai_choice].clear();
+            }
+        }
+
+        // print(night_actions.killers);
+
+        for (size_t i = 0; i < players_num; i++) {
+            if (!night_actions.killers[i].empty()) {
+                auto log_message = TPrettyPrinter().f("Player ").f(i).f(" was killed by ").Str();
+                for (size_t j = 0; j < night_actions.killers[i].size(); j++) {
+                    log_message += players[night_actions.killers[i][j]]->role;
+                    log_message += (j == night_actions.killers[i].size() - 1) ? "" : ", ";
+                }
+                players[i]->alive = false;
+                logger->log(Loglevel::INFO, log_message);
+            }
+        }
+
+    }
+};
+
+
+
+int main(void) {
+    for (int i = 0; i < 200; i++) {
+        std::srand(5);
+        std::cout << "========== SRAND = " << i << " ==========" << std::endl;
+        auto game = Game<Player>(10);
+        auto roles = game.get_random_roles();
+        game.init_players(roles);
+        game.main_loop();
+        break;
+    }
     return 0;
 }
