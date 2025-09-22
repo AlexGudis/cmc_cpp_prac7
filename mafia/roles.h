@@ -14,7 +14,7 @@ public:
         co_return;
     }
 
-    Task<int> voteForExecution(const std::vector<MySharedPtr<Player>> &players) override
+    ValueTask<int> voteForExecution(const std::vector<MySharedPtr<Player>> &players) override
     {
         if (is_human)
         {
@@ -34,9 +34,12 @@ public:
     {
         if (is_human)
         {
-            int target_id = co_await getHumanChoice();
+            ChoiceAwaiter choice{human_choice};
+            int target_id = co_await choice;
             if (target_id != -1)
-                killPlayer(players, target_id);
+            {
+                std::cout << name << " (Mafia) chose to kill player " << target_id << std::endl;
+            }
         }
         else
         {
@@ -47,7 +50,7 @@ public:
         co_return;
     }
 
-    Task<int> voteForExecution(const std::vector<MySharedPtr<Player>> &players) override
+    ValueTask<int> voteForExecution(const std::vector<MySharedPtr<Player>> &players) override
     {
         if (is_human)
         {
@@ -100,7 +103,8 @@ public:
     {
         if (is_human)
         {
-            int target_id = co_await getHumanChoice();
+            ChoiceAwaiter choice{human_choice};
+            int target_id = co_await choice;
             if (target_id != -1)
                 checkPlayer(players, target_id);
         }
@@ -113,7 +117,7 @@ public:
         co_return;
     }
 
-    Task<int> voteForExecution(const std::vector<MySharedPtr<Player>> &players) override
+    ValueTask<int> voteForExecution(const std::vector<MySharedPtr<Player>> &players) override
     {
         if (is_human)
         {
@@ -152,7 +156,8 @@ public:
     {
         if (is_human)
         {
-            int target_id = co_await getHumanChoice();
+            ChoiceAwaiter choice{human_choice};
+            int target_id = co_await choice;
             if (target_id != -1)
                 protectPlayer(players, target_id);
         }
@@ -165,7 +170,7 @@ public:
         co_return;
     }
 
-    Task<int> voteForExecution(const std::vector<MySharedPtr<Player>> &players) override
+    ValueTask<int> voteForExecution(const std::vector<MySharedPtr<Player>> &players) override
     {
         if (is_human)
         {
@@ -219,7 +224,8 @@ public:
     {
         if (is_human)
         {
-            int target_id = co_await getHumanChoice();
+            ChoiceAwaiter choice{human_choice};
+            int target_id = co_await choice;
             if (target_id != -1)
                 killPlayer(players, target_id);
         }
@@ -232,7 +238,7 @@ public:
         co_return;
     }
 
-    Task<int> voteForExecution(const std::vector<MySharedPtr<Player>> &players) override
+    ValueTask<int> voteForExecution(const std::vector<MySharedPtr<Player>> &players) override
     {
         if (is_human)
         {

@@ -7,7 +7,7 @@ class MySharedPtr
 {
 private:
     T* ptr; // Указатель на управляемый объект
-    std::atomic<int>* ref_count;; // Cчетчик ссылок на разделяемый ресурс
+    std::atomic<int>* ref_count; // Cчетчик ссылок на разделяемый ресурс
     
     // Вспомогательная функция для освобождения ресурсов
     void release() {
