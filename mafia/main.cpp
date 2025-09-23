@@ -15,17 +15,14 @@
 #include "shr_ptr.cpp"
 #include "logger.cpp"
 
-// Используем псевдоним для удобства работы с ranges
+// псевдоним для ranges
 namespace view = std::ranges::views;
 
-// ============================================================================
-// КОРУТИНЫ: Реализация асинхронных задач для игровых действий
-// ============================================================================
-
+// корутины
 // Based on https://habr.com/ru/articles/798935/
 struct promise;
 
-// Корутина для представления игровых действий (голосование, ночные действия)
+// (голосование, ночные действия)
 struct Task : std::coroutine_handle<promise> {
     using promise_type = ::promise;
     std::coroutine_handle<promise_type> handle;
@@ -35,67 +32,60 @@ struct Task : std::coroutine_handle<promise> {
 struct promise {
     // Создает объект корутины
     Task get_return_object() { return Task{}; }
+
     // Не приостанавливаем при старте - начинаем выполнение сразу
     std::suspend_never initial_suspend() noexcept { return {}; }
+
     // Не приостанавливаем при завершении - уничтожаем сразу
     std::suspend_never final_suspend() noexcept { return {}; }
-    // Корутина не возвращает значения
+
     void return_void() {}
-    // Обработка исключений (не реализована)
+
     void unhandled_exception() {}
 };
 
-// Вспомогательная функция для вывода с форматированием
-template<typename T>
-void print(T value) {
-    std::cout << Format(value) << std::endl;
-}
 
-// Функция для случайного перемешивания элементов контейнера
+// Перемешаем
 template<typename T>
 void simple_shuffle(T& container) {
-    std::mt19937 g(rand());  // Генератор случайных чисел
-    std::shuffle(container.begin(), container.end(), g);  // Перемешивание
+    std::mt19937 g(rand()); 
+    std::shuffle(container.begin(), container.end(), g);
 }
 
-// ============================================================================
-// СТРУКТУРА ДЛЯ ХРАНЕНИЯ НОЧНЫХ ДЕЙСТВИЙ ИГРОКОВ
-// ============================================================================
-
 struct NightActions {
+    // флаги действий для парсинга ночных действий
+
     unsigned int players_num;  // Общее количество игроков
     bool doctors_action;       // Флаг действия доктора
-    unsigned int doctors_choice;  // Выбор доктора (кого лечить)
+    unsigned int doctors_choice;  // Выбор доктора - кого лечим??
     bool commissar_action;     // Флаг действия комиссара
     unsigned int commissar_choice;  // Выбор комиссара (кого проверить)
     bool journalist_action;    // Флаг действия журналиста
     std::pair<unsigned int, unsigned int> journalist_choice;  // Пара игроков для проверки
     bool samurai_action;       // Флаг действия самурая
-    unsigned int samurai_choice;  // Выбор самурая (кого защитить)
+    unsigned int samurai_choice;  // Выбор самурая -- кого защищает??
     
-    // Вектор векторов: для каждого игрока храним список тех, кто на него напал
+    // для каждого игрока храним список тех, кто на него напал
     std::vector<std::vector<unsigned int>> killers;
     
-    // Конструктор инициализирует структуру для заданного количества игроков
     explicit NightActions(unsigned int players_num_) : players_num(players_num_) {
-        // Создаем пустые списки атакующих для каждого игрока
         for (size_t i = 0; i < players_num; i++) {
-            killers.push_back({});
+            killers.push_back({}); // инициализация пустыми списками
         }
-        // Инициализируем флаги действий как false
+        
         commissar_action = false;
         doctors_action = false;
         journalist_action = false;
         samurai_action = false;
     }
     
-    // Сброс всех действий для новой ночи
+    
     void reset() {
-        // Очищаем списки атакующих для каждого игрока
+        
         for (size_t i = 0; i < killers.size(); i++) {
             killers[i].clear();
         }
-        // Сбрасываем все флаги действий
+        
         commissar_action = false;
         doctors_action = false;
         journalist_action = false;
@@ -103,36 +93,30 @@ struct NightActions {
     }
 };
 
-// ============================================================================
-// БАЗОВЫЙ КЛАСС ИГРОКА И ЕГО СПЕЦИАЛИЗАЦИИ
-// ============================================================================
 
-// Абстрактный базовый класс для всех типов игроков
 class Player {
 public:
-    // Конструктор инициализирует базовые параметры игрока
     Player(size_t id_p) : id(id_p) {
         alive = true;          // Игрок жив при создании
-        is_real_player = false; // По умолчанию - компьютерный игрок
-        is_boss = false;       // По умолчанию - не босс мафии
+        is_real_player = false; // По дефолту - компьютерный игрок
+        is_boss = false;       // По дуфолту - не босс мафии
     };
     
     virtual ~Player() {};
     
-    // Виртуальная функция голосования (возвращает корутину)
+    // голосование (возвращает корутину)
     virtual Task vote(std::vector<size_t> alive_ids, size_t& value) {
         if (is_real_player) {
-            // Для реального игрока - вызываем интерактивную версию
+            // Для реального игрока - своя версия
             vote_player(alive_ids, value);
-            co_return;  // Завершаем корутину
+            co_return;
         } else {
-            // Для AI - вызываем AI-версию
             vote_ai(alive_ids, value);
             co_return;
         }
     }
     
-    // Виртуальная функция ночного действия (возвращает корутину)
+    // ночное действие -> корутина
     virtual Task act(std::vector<size_t> alive_ids,
                      NightActions& night_actions,
                      std::vector<Shared_pointer<Player>> players) {
@@ -145,20 +129,20 @@ public:
         }
     }
     
-    // Чисто виртуальные функции, которые должны быть реализованы в потомках
     virtual void vote_ai(std::vector<size_t>& alive_ids, size_t& value) = 0;
     
-    // Реализация голосования для реального игрока
+    // Человек голосует
     virtual void vote_player(std::vector<size_t>& alive_ids, size_t& value) {
-        std::cout << "Voting! Choose which candidate to vote for from the following:" << std::endl;
-        // Показываем доступных для голосования игроков
+        std::cout << "It's time to vote. Your choice could be decisive. Who are you voting for?" << std::endl;
+        
+        // Пока ещё живые, за которых можно голосовать
         for (auto i : alive_ids) {
             std::cout << i << " ";
         }
         std::cout << std::endl;
         size_t res;
-        std::cin >> res;  // Получаем выбор игрока
-        value = res;      // Сохраняем результат
+        std::cin >> res;
+        value = res;
         return;
     }
     
@@ -170,32 +154,28 @@ public:
                             NightActions& night_actions,
                             std::vector<Shared_pointer<Player>> players) = 0;
 
-    // Параметры игрока
-    bool alive;           // Жив ли игрок
-    bool is_real_player;  // Является ли реальным игроком (человеком)
-    bool is_boss;         // Является ли боссом мафии
-    size_t id;            // Уникальный идентификатор игрока
-    std::vector<size_t> known_mafia{};  // Список известных мафиози (для мафии и комиссара)
+    bool alive;           // жив?
+    bool is_real_player;  // это человек?
+    bool is_boss;         // это босс мафии?
+    size_t id;
+    std::vector<size_t> known_mafia{};  // список мафий для типов "мафия" и "комиссар", так как они голосуют по особенному
     std::string team;     // Команда ("civilian", "mafia", "maniac")
-    std::string role;     // Роль ("civilian", "commissar", "doctor", etc.)
+    std::string role;     // Роль
 };
 
-// ============================================================================
-// КЛАСС МИРНОГО ЖИТЕЛЯ (БАЗОВЫЙ ДЛЯ ГОРОЖАН)
-// ============================================================================
 
 class Civilian : public Player {
 public:
     Civilian(size_t id_p) : Player(id_p) {
-        team = "civilian";   // Команда мирных жителей
-        role = "civilian";   // Роль обычного жителя
+        team = "civilian";
+        role = "civilian";
     }
     virtual ~Civilian() {};
 
-    // AI-логика голосования для мирного жителя
     virtual void vote_ai(std::vector<size_t>& alive_ids, size_t& value) override {
-        simple_shuffle(alive_ids);  // Случайно перемешиваем список живых
+        simple_shuffle(alive_ids);
         size_t i = 0;
+
         // Ищем первого живого игрока, который не является собой
         while (i < alive_ids.size()) {
             if (alive_ids[i] != id) {
@@ -204,23 +184,22 @@ public:
             }
             i++;
         }
-        value = 0;  // Запасной вариант (не должен происходить)
+        value = 0; // на всякий случай
         return;
     }
     
-    // Мирные жители не совершают действий ночью (базовая реализация)
+    // Мирный ночью спит и ничего не делает
     virtual void act_ai(std::vector<size_t>&, NightActions&, std::vector<Shared_pointer<Player>>) override {
         return;
     }
     
+
+     
     virtual void act_player(std::vector<size_t>&, NightActions&, std::vector<Shared_pointer<Player>>) override {
         return;
     }
 };
 
-// ============================================================================
-// КЛАСС КОМИССАРА (ДЕТЕКТИВА)
-// ============================================================================
 
 class Commissar : public Civilian {
     std::vector<size_t> already_checked;  // Уже проверенные игроки
@@ -229,13 +208,13 @@ public:
     Commissar(size_t id_p) : Civilian(id_p) {
         already_checked = {id};  // Начинаем с проверки себя
         known_civilian = {id};   // Себя знаем как мирного
-        role = "commissar";      // Устанавливаем роль
+        role = "commissar";
     }
     virtual ~Commissar() {};
 
-    // AI-логика голосования комиссара
     virtual void vote_ai(std::vector<size_t>& alive_ids, size_t& value) override {
         simple_shuffle(alive_ids);
+
         // Сначала голосуем против известных мафиози, если они живы
         for (size_t i = 0; i < known_mafia.size(); i++) {
             if (std::find(alive_ids.begin(), alive_ids.end(), known_mafia[i]) != alive_ids.end()) {
@@ -247,15 +226,16 @@ public:
         Civilian::vote_ai(alive_ids, value);
         return;
     }
-    
-    // AI-логика ночных действий комиссара
+
+
     virtual void act_ai(std::vector<size_t>& alive_ids,
                         NightActions& night_actions,
                         std::vector<Shared_pointer<Player>> players) override {
+
         // Если есть известные мафиози среди живых - стреляем в них
         for (size_t i = 0; i < known_mafia.size(); i++) {
             if (std::find(alive_ids.begin(), alive_ids.end(), known_mafia[i]) != alive_ids.end()) {
-                night_actions.killers[known_mafia[i]].push_back(id);
+                night_actions.killers[known_mafia[i]].push_back(id); // читаетс как в игрока (i) [он же мафия] стрелял игрок id [он же комиссарр]
                 return;
             }
         }
@@ -267,14 +247,13 @@ public:
             if (std::find(already_checked.begin(), already_checked.end(), i) == already_checked.end()) {
                 already_checked.push_back(i);  // Добавляем в проверенные
                 
-                // Запоминаем результат проверки
+                // Запоминаем результат
                 if (players[i]->team == "mafia") {
-                    known_mafia.push_back(i);  // Запоминаем мафиози
+                    known_mafia.push_back(i);
                 } else {
-                    known_civilian.push_back(i);  // Запоминаем мирного
+                    known_civilian.push_back(i);
                 }
-                
-                // Устанавливаем флаг действия комиссара
+
                 night_actions.commissar_action = true;
                 night_actions.commissar_choice = i;
                 return;
@@ -283,15 +262,15 @@ public:
         return;
     }
     
-    // Интерактивная версия ночных действий для реального игрока
+
     virtual void act_player(std::vector<size_t>& alive_ids,
                             NightActions& night_actions,
                             std::vector<Shared_pointer<Player>> players) override {
         while (true) {
-            std::cout << "Choose an action: shoot (s) or check (c)." << std::endl;
+            std::cout << "Yoy are the comissar. What are u willing for? shoot (s) or check (c)." << std::endl;
             std::string choice;
             std::cin >> choice;
-            std::cout << "Choose one of:" << std::endl;
+            std::cout << "Choose your target:" << std::endl;
             for (auto i : alive_ids) {
                 std::cout << i << " ";
             }
@@ -300,10 +279,12 @@ public:
             std::cin >> shoot_check;
             
             if (choice == "shoot" || choice == "s") {
+
                 // Выстрел в выбранного игрока
                 night_actions.killers[shoot_check].push_back(id);
                 return;
             } else if (choice == "check" || choice == "c") {
+
                 // Проверка игрока
                 std::cout << "Player " << shoot_check << " is "
                           << ((players[shoot_check]->team == "mafia") ? "mafia" : "not mafia") << std::endl;
@@ -311,58 +292,53 @@ public:
                 night_actions.commissar_choice = shoot_check;
                 return;
             } else {
-                std::cout << "Incorrect action!" << std::endl;
+                std::cout << "WRONG action!!!" << std::endl;
             }
         }
     }
 };
-
-// ============================================================================
-// КЛАСС ДОКТОРА
-// ============================================================================
 
 class Doctor : public Civilian {
     size_t last_heal;  // ID последнего вылеченного игрока
 public:
     Doctor(size_t id_p) : Civilian(id_p) {
         role = "doctor";
-        last_heal = std::numeric_limits<size_t>::max();  // Инициализируем максимальным значением
+        last_heal = std::numeric_limits<size_t>::max();  // сразу ставим максимально возможное значение
     }
     virtual ~Doctor() {}
 
-    // AI-логика лечения доктора
+  
     virtual void act_ai(std::vector<size_t>& alive_ids,
                         NightActions& night_actions,
                         std::vector<Shared_pointer<Player>>) override {
         simple_shuffle(alive_ids);
-        // Ищем игрока, которого не лечили в прошлую ночь
+        // Ищем игрока, которого не лечили в прошлую ночь и его же лечимы
         for (size_t i = 0; i < alive_ids.size(); i++) {
             if (alive_ids[i] != last_heal) {
                 night_actions.doctors_action = true;
                 night_actions.doctors_choice = alive_ids[i];
-                last_heal = alive_ids[i];  // Запоминаем кого лечили
+                last_heal = alive_ids[i]; 
                 return;
             }
         }
     }
-    
-    // Интерактивная версия лечения
+
     virtual void act_player(std::vector<size_t>& alive_ids,
                             NightActions& night_actions,
                             std::vector<Shared_pointer<Player>>) override {
-        std::cout << "Who do you want to heal?" << std::endl
+        std::cout << "Remember, you are the doctor. It's time to save someone life. Who do you want to heal?" << std::endl
                   << "Choose one of:" << std::endl;
         for (auto i : alive_ids) {
             std::cout << i << " ";
         }
         std::cout << std::endl;
-        std::cout << "But it shouldn't be the same player you healed last time." << std::endl;
+        std::cout << "No no no. It is not working this way. U have already healed this person last night!" << std::endl;
         
         while (true) {
             size_t choice;
             std::cin >> choice;
             if (last_heal == choice) {
-                std::cout << "You already healed this player last time." << std::endl;
+                std::cout << "No no no. It is not working this way. U have already healed this person last night!" << std::endl;
                 continue;
             } else {
                 night_actions.doctors_action = true;
@@ -374,9 +350,6 @@ public:
     }
 };
 
-// ============================================================================
-// КЛАСС ЖУРНАЛИСТА
-// ============================================================================
 
 class Journalist : public Civilian {
 public:
@@ -385,12 +358,12 @@ public:
     }
     virtual ~Journalist() {}
 
-    // AI-логика журналиста: проверяет двух случайных игроков
+    // проверяет двух случайных игроков
     virtual void act_ai(std::vector<size_t>& alive_ids,
                         NightActions& night_actions,
                         std::vector<Shared_pointer<Player>>) override {
         simple_shuffle(alive_ids);
-        // Перебираем все пары игроков (кроме себя)
+        // Перебираем все пары ЖИВЫХ игроков (кроме себя)
         for (size_t i = 0; i < alive_ids.size() - 1; i++) {
             for (size_t j = i + 1; j < alive_ids.size(); j++) {
                 if (i != id && j != id) {
@@ -401,16 +374,16 @@ public:
         }
     }
     
-    // Интерактивная версия проверки
+
     virtual void act_player(std::vector<size_t>& alive_ids,
-                            NightEvents& night_actions,
+                            NightActions& night_actions,
                             std::vector<Shared_pointer<Player>> players) override {
-        std::cout << "Choose two players to compare:" << std::endl;
+        std::cout << "You are a journalist. Choose two characters to check their identities:" << std::endl;
         for (auto i : alive_ids) {
             std::cout << i << " ";
         }
         std::cout << std::endl;
-        std::cout << "Cannot select yourself." << std::endl;
+        std::cout << "You can't check yourself)))" << std::endl;
         
         while (true) {
             size_t first, second;
@@ -426,16 +399,12 @@ public:
                 night_actions.journalist_choice = {first, second};
                 return;
             } else {
-                std::cout << "Cannot select yourself!" << std::endl;
+                std::cout << "You are a stubborn guy!. You can't check yourself)))" << std::endl;
                 continue;
             }
         }
     }
 };
-
-// ============================================================================
-// КЛАСС САМУРАЯ (ОХРАННИКА)
-// ============================================================================
 
 class Samurai : public Civilian {
 public:
@@ -444,22 +413,26 @@ public:
     }
     virtual ~Samurai() {}
 
-    // AI-логика самурая: защищает случайного игрока
     virtual void act_ai(std::vector<size_t>& alive_ids,
                         NightActions& night_actions,
                         std::vector<Shared_pointer<Player>>) override {
         simple_shuffle(alive_ids);
         for (size_t i = 0; i < alive_ids.size(); i++) {
-            night_actions.samurai_action = true;
-            night_actions.samurai_choice = i;
+            // Самурай защищает любого, но не себе
+            if (i != id)
+            {
+                night_actions.samurai_action = true;
+                night_actions.samurai_choice = i;
+                return;
+            }
         }
+
     }
     
-    // Интерактивная версия защиты
     virtual void act_player(std::vector<size_t>& alive_ids,
                             NightActions& night_actions,
                             std::vector<Shared_pointer<Player>>) override {
-        std::cout << "Who do you want to protect?" << std::endl
+        std::cout << "You have no destination, only a path. For whom are you willing to lay down your life this time?" << std::endl
                   << "Choose one of:" << std::endl;
         for (auto i : alive_ids) {
             std::cout << i << " ";
@@ -472,24 +445,22 @@ public:
     }
 };
 
-// ============================================================================
-// КЛАСС МАФИИ
-// ============================================================================
 
 class Mafia : public Player {
 public:
     Mafia(size_t id_p) : Player(id_p) {
-        team = "mafia";  // Команда мафии
-        role = "mafia";  // Роль обычного мафиози
+        team = "mafia";
+        role = "mafia";
     }
     virtual ~Mafia() {}
 
-    // AI-логика голосования мафии: голосует против не-мафиози
+    // голосует против НЕ мафов
     virtual void vote_ai(std::vector<size_t>& alive_ids, size_t& value) override {
         simple_shuffle(alive_ids);
         size_t i = 0;
-        // Ищем первого игрока, который не входит в известную мафию
+        // Ищем первого игрока, который не мафия
         while (i < alive_ids.size()) {
+            // Очевидно, что мафия знает, кто мафия, поэтому может голосовать не в маию
             if (std::find(known_mafia.begin(), known_mafia.end(), alive_ids[i]) == known_mafia.end()) {
                 value = alive_ids[i];
                 return;
@@ -500,7 +471,7 @@ public:
         return;
     }
     
-    // AI-логика ночных действий: только босс мафии выбирает жертву
+    // только босс мафии выбирает жертву
     virtual void act_ai(std::vector<size_t>& alive_ids,
                         NightActions& night_actions,
                         std::vector<Shared_pointer<Player>>) override {
@@ -518,12 +489,12 @@ public:
         }
     }
     
-    // Интерактивная версия для реального игрока-мафии
+   
     virtual void act_player(std::vector<size_t>& alive_ids,
                             NightActions& night_actions,
                             std::vector<Shared_pointer<Player>>) override {
-        // Показываем известных мафиози
-        std::cout << "Mafia members:" << std::endl;
+        
+        std::cout << "The mafia clan is legendary and currently consists of" << std::endl;
         for (auto i : known_mafia) {
             std::cout << i << " ";
         }
@@ -531,7 +502,7 @@ public:
         
         if (is_boss) {
             // Босс выбирает жертву
-            std::cout << "You are a mafia boss. Who will the mafia kill on your orders?" << std::endl
+            std::cout << "You're on top of the world, you're a mafia boss. Decide who gets killed tonight" << std::endl
                       << "Choose one of:" << std::endl;
             for (auto i : alive_ids) {
                 std::cout << i << " ";
@@ -542,14 +513,11 @@ public:
             night_actions.killers[choice].push_back(id);
         } else {
             // Обычный мафиозо не принимает решений
-            std::cout << "You are not a mafia boss. Tonight you will not decide who the mafia will kill." << std::endl;
+            std::cout << "You're cool, but not so cool that you decide whose life is granted and whose is taken. In short, you're not a mafia boss, so you don't decide anything" << std::endl;
         }
     }
 };
 
-// ============================================================================
-// КЛАСС БЫКА (УСИЛЕННЫЙ МАФИОЗИ)
-// ============================================================================
 
 class Bull : public Mafia {
 public:
@@ -559,19 +527,16 @@ public:
     virtual ~Bull() {}
 };
 
-// ============================================================================
-// КЛАСС МАНЬЯКА (ОДИНОЧКА)
-// ============================================================================
 
 class Maniac : public Player {
 public:
     Maniac(size_t id_p) : Player(id_p) {
-        team = "maniac";  // Собственная команда
-        role = "maniac";  // Роль маньяка
+        team = "maniac";  
+        role = "maniac";  
     }
     virtual ~Maniac() {};
 
-    // AI-логика голосования маньяка: голосует против любого другого игрока
+    // голосует против любого другого игрока
     virtual void vote_ai(std::vector<size_t>& alive_ids, size_t& value) override {
         simple_shuffle(alive_ids);
         size_t i = 0;
@@ -586,7 +551,7 @@ public:
         return;
     }
     
-    // AI-логика ночных действий: убивает случайного игрока
+    // убивает случайного игрока
     virtual void act_ai(std::vector<size_t>& alive_ids,
                         NightActions& night_actions,
                         std::vector<Shared_pointer<Player>>) override {
@@ -601,11 +566,11 @@ public:
         }
     }
     
-    // Интерактивная версия для реального игрока-маньяка
+    // версия для реального игрока-маньяка
     virtual void act_player(std::vector<size_t>& alive_ids,
                             NightActions& night_actions,
                             std::vector<Shared_pointer<Player>>) override {
-        std::cout << "Choose your victim:" << std::endl;
+        std::cout << "You are a deranged serial killer, there are no laws or boundaries for you, who will we kill tonight?" << std::endl;
         for (auto i : alive_ids) {
             std::cout << i << " ";
         }
@@ -616,9 +581,6 @@ public:
     }
 };
 
-// ============================================================================
-// КОНЦЕПТ ДЛЯ ПРОВЕРКИ ТИПОВ ИГРОКОВ НА ЭТАПЕ КОМПИЛЯЦИИ
-// ============================================================================
 
 template<typename T>
 concept PlayerConcept = requires(T player,
@@ -626,38 +588,37 @@ concept PlayerConcept = requires(T player,
                                  size_t value,
                                  NightActions night_actions,
                                  std::vector<Shared_pointer<Player>> players) {
-    // Проверяем, что тип T имеет метод vote с правильной сигнатурой
+
+    // Проверяю, что у ведущего классы, для которых определены методы vote и act в объектах
+
+    // тип T имеет  vote 
     { player.vote(ids, value) } -> std::same_as<Task>;
-    // Проверяем, что тип T имеет метод act с правильной сигнатурой  
+    // тип T имеет  act 
     { player.act(ids, night_actions, players) } -> std::same_as<Task>;
 };
 
-// ============================================================================
-// КЛАСС ИГРЫ (УПРАВЛЯЕТ ВСЕМ ИГРОВЫМ ПРОЦЕССОМ)
-// ============================================================================
-
+// Класс ведущего игру
 template<PlayerConcept Player>
 class Game {
 public:
-    Logger* logger;  // Логгер для записи событий игры
-    std::vector<Shared_pointer<Player>> players {};  // Вектор всех игроков
-    unsigned int players_num;     // Общее количество игроков
+    Logger* logger;
+    std::vector<Shared_pointer<Player>> players {};  // массив игроков
+    unsigned int players_num;     // количество игроков
     unsigned int mafia_modifier;  // Модификатор для расчета количества мафии
     
-    // Доступные роли для мирных жителей и мафии
+    // Доступные роли
     std::vector<std::string> civilian_roles {"commissar", "doctor", "journalist", "samurai"};
     std::vector<std::string> mafia_roles {"bull"};
     
-    size_t samurai_id;  // ID самурая (для специальной логики)
-    size_t bull_id;     // ID быка (для специальной логики)
+    size_t samurai_id;
+    size_t bull_id;
 
-    // Конструктор игры
     explicit Game(unsigned int players_num_, unsigned int mafia_modifier_ = 3) :
         players_num(players_num_),
         mafia_modifier(mafia_modifier_)
     {}
 
-    // Вспомогательный метод для добавления случайных ролей
+    // добавлениt случайных ролей
     void add_random_roles(
             std::vector<std::string> roles,
             size_t limit,
@@ -665,30 +626,26 @@ public:
             std::vector<std::string>& result) {
         std::mt19937 g(rand());
         size_t i = 0;
-        std::shuffle(roles.begin(), roles.end(), g);  // Перемешиваем роли
+        std::shuffle(roles.begin(), roles.end(), g);
         while (i < limit) {
             if (i < roles.size()) {
-                result.push_back(roles[i]);  // Берем специальную роль
+                result.push_back(roles[i]);  //специальную роль
             } else {
-                result.push_back(default_role);  // Или роль по умолчанию
+                result.push_back(default_role);  // роль по умолчанию
             }
             i++;
         }
     }
 
-    // Генерация случайного распределения ролей
+    // Расчёт количества ролей каждого класса
     std::vector<std::string> get_random_roles() {
         unsigned int mafia_num = players_num / mafia_modifier;  // Расчет количества мафии
         std::vector<std::string> random_roles;
 
-        // Добавляем роли мафии
         add_random_roles(mafia_roles, mafia_num, "mafia", random_roles);
-        // Добавляем маньяка
         random_roles.push_back("maniac");
-        // Добавляем роли мирных жителей
         add_random_roles(civilian_roles, players_num - mafia_num - 1, "civilian", random_roles);
         
-        // Перемешиваем итоговый список ролей
         std::mt19937 g(rand());
         std::shuffle(random_roles.begin(), random_roles.end(), g);
         return random_roles;
@@ -697,18 +654,18 @@ public:
     // Инициализация игроков с заданными ролями
     void init_players(std::vector<std::string> roles) {
         players.clear();
-        logger = new Logger{"init.log"};
-        logger->log(Loglevel::INFO, "--- INIT ---");
+        logger = new Logger{"start.log"};
+        logger->log(Loglevel::INFO, "======================= GAME STARTED!!! =======================");
 
         // Запрос у пользователя, хочет ли он играть
-        std::cout << "Do you want to play? Select the number of the player (from 0 to " << roles.size() - 1
-                  << ") you want to play or -1 if you don't want to." << std::endl;
+        std::cout << "Wanna join our city?? Select the number (from 0 to " << roles.size() - 1
+                  << ") if you want to play or -1 if you are just a spectator." << std::endl;
         int choice;
         std::cin >> choice;
         
-        std::vector<size_t> mafia_buf{};  // Временный буфер для ID мафиози
+        std::vector<size_t> mafia_buf{};  //  буфер для ID мафиози
         
-        // Создаем игроков согласно распределению ролей
+        // Создание по распределениею
         for (size_t i = 0; i < roles.size(); i++) {
             auto role = roles[i];
             if (role == "civilian") {
@@ -749,31 +706,31 @@ public:
                 samurai_id = i;
             }
             
-            // Если игрок выбрал эту роль, помечаем как реального игрока
+            // Если игрок выбрал конкретную роль, помечаем её
             if (std::cmp_equal(choice, i)) {
                 players[i]->is_real_player = true;
                 std::cout << "You are " << players[i]->role << "!" << std::endl;
                 if (players[i]->role == "samurai") {
-                    std::cout << "Wake up, Samurai! We have a city to burn!" << std::endl;
+                    std::cout << "Your path is long, so fulfill it beautifully." << std::endl;
                 }
             }
         }
         
-        // Сообщаем мафиози друг о друге
+        // Для мафий в их списки известных мафиози добавляем других мафов (нужно в ночных действиях)
         for (auto i : mafia_buf) {
             players[i]->known_mafia.insert(players[i]->known_mafia.end(), mafia_buf.begin(),
                     mafia_buf.end());
         }
         
-        // Выбираем случайного босса мафии
+        // босс случаен
         simple_shuffle(mafia_buf);
         players[mafia_buf[0]]->is_boss = true;
         delete logger;
     }
 
-    // Перевыборы босса мафии (если предыдущий убит)
+    // если босс убит -- перевыбор
     void reelection_mafia_boss() {
-        // Используем ranges для фильтрации живых мафиози
+        // ranes для фильтрации живых
         auto mafia = players |
                      view::filter([](auto p) { return p->alive; }) |
                      view::filter([](auto p) { return p->team == "mafia"; });
@@ -787,13 +744,12 @@ public:
         }
     }
 
-    // Проверка текущего состояния игры
+    // текущий статус игры
     std::string game_status() {
-        // Фильтруем живых игроков с помощью ranges
-        auto alives = players | view::filter([](auto p) { return p->alive; });
+        auto alives = players | view::filter([](auto p) { return p->alive; }); // живые к данному моменту
         
         if (alives.empty()) {
-            // Все игроки мертвы - ничья
+            // ничья
             return "draw";
         } else {
             // Фильтруем живых мафиози
@@ -803,10 +759,10 @@ public:
                 // Мафия мертва
                 auto maniac_alive = alives | view::filter([](auto p) { return p->team == "maniac"; });
                 if (maniac_alive.empty()) {
-                    // Маньяк тоже мертв - победа мирных
+                    // Маньяк тоже мертв, значит, мирные победили
                     return "civilian";
                 } else {
-                    // Маньяк жив - проверяем условия победы маньяка
+                    // Маньяк жив. Проверим, победил ли он??
                     if (std::ranges::distance(alives) >= 3) {
                         return "continue";  // Игра продолжается
                     } else {
@@ -826,61 +782,61 @@ public:
                         return "continue";  // Игра продолжается
                     }
                 } else {
-                    // Маньяк жив - игра продолжается
+                    // Маньяк жив, значит, ещё не победа мафии
                     return "continue";
                 }
             }
         }
     }
 
-    // Главный игровой цикл (день-ночь-день-ночь...)
+
     void main_loop() {
         unsigned int day_number = 0;
         std::string cur_status = "";
         
         while (true) {
-            // Создаем логгер для текущего дня
+
             logger = new Logger{"day_" + std::to_string(day_number) + ".log"};
-            logger->log(Loglevel::INFO, "--- DAY " + std::to_string(day_number) + " ---");
+            logger->log(Loglevel::INFO, "==== DAY " + std::to_string(day_number) + " ====");
             
-            // Фаза дня: голосование
+            // голосуем
             day_vote();
-            // Перевыборы босса мафии (если нужно)
+            // выбиарем нового босса мафии
             reelection_mafia_boss();
-            // Проверяем состояние игры
+            // статус игры
             cur_status = game_status();
             if (cur_status != "continue") {
                 delete logger;
-                break;  // Игра завершена
+                break;
             }
             
-            // Фаза ночи: действия игроков
+            // ночь
             night_act();
             reelection_mafia_boss();
             cur_status = game_status();
             if (cur_status != "continue") {
                 delete logger;
-                break;  // Игра завершена
+                break; 
             }
             
             day_number++;
             delete logger;
         }
         
-        // Записываем финальный результат
+        // Итоговый ресультат
         logger = new Logger{"result.log"};
         if (cur_status == "draw") {
-            logger->log(Loglevel::INFO, "No one survived the brutal shootouts and nighttime murders... The city died out...");
+            logger->log(Loglevel::INFO, "This city is terrible, I highly recommend not living here. It's simply unbelievable, they shot each other in just a couple of nights, a city of corpses.");
             logger->log(Loglevel::INFO, "DRAW!");
-            logger->log(Loglevel::INFO, "Alives: ---");
+            logger->log(Loglevel::INFO, "Alives: they are all dead...");
         } else if (cur_status == "mafia") {
-            logger->log(Loglevel::INFO, "The mafia has taken over this city and no one can stop them anymore. The mafia never dies!");
+            logger->log(Loglevel::INFO, "This city is mired in crime, the mafia has gained the upper hand and now controls the city.");
             logger->log(Loglevel::INFO, "MAFIA WIN");
         } else if (cur_status == "maniac") {
-            logger->log(Loglevel::INFO, "Neither the mafia, nor the peaceful civilian, nor the sheriff could stop the crazy loner in the night...");
+            logger->log(Loglevel::INFO, "He escaped from the mental hospital and systematically and gradually killed every inhabitant of the city. Neither the mafia nor the sheriff could stop him. He is a maniac.");
             logger->log(Loglevel::INFO, "MANIAC WINS");
         } else if (cur_status == "civilian") {
-            logger->log(Loglevel::INFO, "The city sleeps peacefully. The citizens united and fought back against the mafia and the maniac.");
+            logger->log(Loglevel::INFO, "This city is absolutely safe to live in. Peaceful residents organized a successful democratic election, rooted out a mafia clan, and identified a serial killer.");
             logger->log(Loglevel::INFO, "CIVILIANS WIN");
         }
         
@@ -894,61 +850,58 @@ public:
         delete logger;
     }
 
-    // Фаза дневного голосования
     void day_vote() {
-        // Используем ranges для получения ID живых игроков
+        // находим живые айдишники
         auto alives = players | view::filter([](auto p) { return p->alive; });
         auto alives_ids_rng = alives | view::transform([](auto p) { return p->id; });
         std::vector<size_t> alives_ids{alives_ids_rng.begin(), alives_ids_rng.end()};
         
-        // Создаем карту для подсчета голосов
+        // карта голосов
+        // id игрока - кол-во голосов за него
         std::map<size_t, unsigned int> votes{};
         for (auto id: alives_ids) {
             votes[id] = 0;  // Инициализируем нулями
         }
 
-        // Перемешиваем порядок голосования
         std::vector<Shared_pointer<Player>> sh_alives{alives.begin(), alives.end()};
         simple_shuffle(sh_alives);
         
-        // Каждый игрок голосует
+        // Каждыйы голосует
         for (const auto& player : sh_alives) {
             size_t value = 0;
-            player->vote(alives_ids, value);  // Вызываем корутину голосования
-            votes[value]++;  // Увеличиваем счетчик голосов
+            player->vote(alives_ids, value);
+            votes[value]++;
             logger->log(Loglevel::INFO,
                     TPrettyPrinter().f("Player ").f(player->id).f(" voted for player ").f(value).Str());
         }
 
-        // Находим игрока с максимальным количеством голосов
         auto key_val = std::max_element(votes.begin(), votes.end(),
                 [](const std::pair<int, int>& p1, const std::pair<int, int>& p2) {
                     return p1.second < p2.second;
                 });
         
-        // "Казним" игрока с наибольшим количеством голосов
+        // убиваю игрока с max кол-во голосов
         players[key_val->first]->alive = false;
         logger->log(Loglevel::INFO,
-                TPrettyPrinter().f("Player ").f(key_val->first).f(" was executed by order of the city.").Str());
+                TPrettyPrinter().f("Player ").f(key_val->first).f(" was hanged in the city square by peaceful means of democracy and voting.").Str());
     }
 
-    // Фаза ночных действий
     void night_act() {
-        // Получаем ID живых игроков с помощью ranges
+        // находим живые айдишники
         auto alives = players | view::filter([](auto p) { return p->alive; });
         auto alives_ids_rng = alives | view::transform([](auto p) { return p->id; });
         std::vector<size_t> alives_ids{alives_ids_rng.begin(), alives_ids_rng.end()};
         
-        // Создаем и сбрасываем структуру ночных действий
+        // БД ночи очищается
         NightActions night_actions{players_num};
         night_actions.reset();
 
-        // Каждый игрок совершает свое ночное действие
+        // каждый делает ночь
         for (const auto& player : alives) {
-            player->act(alives_ids, night_actions, players);  // Вызываем корутину действия
+            player->act(alives_ids, night_actions, players);
         }
 
-        // Специальная логика для Быка: защита от маньяка
+        // Бык -спец маф, которого не может завалить маньяк
         for (size_t i = 0; i < night_actions.killers[bull_id].size(); i++) {
             auto killer_id = night_actions.killers[bull_id][i];
             if (players[killer_id]->role == "maniac") {
@@ -957,7 +910,7 @@ public:
             }
         }
         
-        // Обрабатываем специальные действия и логируем их
+        // обработка ночных действий
         
         if (night_actions.commissar_action) {
             logger->log(Loglevel::INFO, TPrettyPrinter().f("Commissar checked player ").f(night_actions.commissar_choice).f(
@@ -980,26 +933,25 @@ public:
             logger->log(Loglevel::INFO, TPrettyPrinter().f("Samurai protected player ").f(night_actions.samurai_choice).Str());
             auto& killers_list = night_actions.killers[night_actions.samurai_choice];
             if (!killers_list.empty()) {
-                // Самурай контратакует первого атакующего
+                // Самурай атакует того, кто попытался убить его начальника
                 simple_shuffle(killers_list);
                 night_actions.killers[killers_list[0]].push_back(samurai_id);
-                // Самурай также получает урон (жертвует собой)
+                // самурай умирает сам
                 night_actions.killers[samurai_id].push_back(samurai_id);
-                // Защищенный игрок не получает урона
+                // защищенный игрок спасёен
                 night_actions.killers[night_actions.samurai_choice].clear();
             }
         }
 
-        // Обрабатываем все убийства
+        // обработка убийстви
         for (size_t i = 0; i < players_num; i++) {
             if (!night_actions.killers[i].empty()) {
-                // Формируем сообщение о убийстве
                 auto log_message = TPrettyPrinter().f("Player ").f(i).f(" was killed by ").Str();
                 for (size_t j = 0; j < night_actions.killers[i].size(); j++) {
                     log_message += players[night_actions.killers[i][j]]->role;
                     log_message += (j == night_actions.killers[i].size() - 1) ? "" : ", ";
                 }
-                // Убиваем игрока
+                // убиваем 
                 players[i]->alive = false;
                 logger->log(Loglevel::INFO, log_message);
             }
@@ -1007,25 +959,26 @@ public:
     }
 };
 
-// ============================================================================
-// ГЛАВНАЯ ФУНКЦИЯ ПРОГРАММЫ
-// ============================================================================
-
 int main(void) {
-    // Цикл для многократного запуска игры (для тестирования)
+    // цикл для теста
     for (int i = 0; i < 200; i++) {
-        std::srand(5);  // Фиксированный seed для воспроизводимости
-        std::cout << "========== SRAND = " << i << " ==========" << std::endl;
+        //std::srand(5);
+        //std::cout << "========== SRAND = " << i << " ==========" << std::endl;
         
         // Создаем игру на 10 игроков
-        auto game = Game<Player>(10);
-        // Генерируем случайные роли
+        unsigned int n;
+        std::cout << "How many players will play this game?" << std::endl;
+        std::cin >> n;
+
+        auto game = Game<Player>(n);
+        
         auto roles = game.get_random_roles();
-        // Инициализируем игроков
+       
+        // инициалищация игроков
         game.init_players(roles);
-        // Запускаем главный игровой цикл
+        
         game.main_loop();
-        break;  // Прерываем после первой игры (для демонстрации)
+        break;
     }
     return 0;
 }
