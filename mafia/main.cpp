@@ -962,8 +962,10 @@ public:
 int main(void) {
     // цикл для теста
     for (int i = 0; i < 200; i++) {
-        //std::srand(5);
-        //std::cout << "========== SRAND = " << i << " ==========" << std::endl;
+        std::time_t result = std::time(nullptr);
+        //std::srand((int) result);
+        std::srand(i);
+        std::cout << "========== SRAND = " << i << " ==========" << std::endl;
         
         // Создаем игру на 10 игроков
         unsigned int n;
