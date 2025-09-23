@@ -1134,7 +1134,8 @@ public:
 
 int main(void)
 {
-    std::time_t result = std::time(nullptr);
+    int i = 7;
+    //std::time_t result = std::time(nullptr);
     // std::srand((int) result);
     std::srand(i);
     std::cout << "========== SRAND = " << i << " ==========" << std::endl;
