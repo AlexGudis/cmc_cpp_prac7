@@ -8,7 +8,7 @@
 #include <filesystem>
 
 // Enum to represent log levels
-enum class Loglevel { DEBUG, INFO, WARNING, ERROR, CRITICAL };
+enum class Loglevel { INFO };
 
 class Logger {
 public:
@@ -18,9 +18,6 @@ public:
         logsDir = std::filesystem::current_path() / "logs";
         std::filesystem::create_directory(logsDir);
         logFile.open(logsDir / filename, std::ios::app);
-        if (!logFile.is_open()) {
-            std::cerr << "Error opening log file." << std::endl;
-        }
     }
 
     // Destructor: Closes the log file
@@ -51,16 +48,8 @@ private:
     std::string levelToString(Loglevel level)
     {
         switch (level) {
-            case Loglevel::DEBUG:
-                return "DEBUG";
             case Loglevel::INFO:
                 return "INFO";
-            case Loglevel::WARNING:
-                return "WARNING";
-            case Loglevel::ERROR:
-                return "ERROR";
-            case Loglevel::CRITICAL:
-                return "CRITICAL";
             default:
                 return "UNKNOWN";
         }
