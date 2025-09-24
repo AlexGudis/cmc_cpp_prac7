@@ -15,6 +15,8 @@
 #include "shr_ptr.cpp"
 #include "logger.cpp"
 
+// Диалоги
+
 // псевдоним для ranges
 namespace view = std::ranges::views;
 
@@ -268,9 +270,11 @@ public:
         }
 
         // Иначе проверяем нового игрока
-        auto max_id = *std::max_element(alive_ids.begin(), alive_ids.end());
-        for (size_t i = 0; i <= max_id; i++)
+        //auto max_id = *std::max_element(alive_ids.begin(), alive_ids.end());
+
+        for (const auto &i: alive_ids)
         {
+
             // Ищем еще не проверенного игрока
             if (std::find(already_checked.begin(), already_checked.end(), i) == already_checked.end())
             {
@@ -377,7 +381,7 @@ public:
             std::cout << i << " ";
         }
         std::cout << std::endl;
-        std::cout << "No no no. It is not working this way. U have already healed this person last night!" << std::endl;
+        //std::cout << "No no no. It is not working this way. U have already healed this person last night!" << std::endl;
 
         while (true)
         {
@@ -415,11 +419,11 @@ public:
     {
         simple_shuffle(alive_ids);
         // Перебираем все пары ЖИВЫХ игроков (кроме себя)
-        for (size_t i = 0; i < alive_ids.size() - 1; i++)
+        for (const auto &i : alive_ids)
         {
-            for (size_t j = i + 1; j < alive_ids.size(); j++)
+            for (const auto &j : alive_ids)
             {
-                if (i != id && j != id)
+                if (i > j && i != id && j != id)
                 {
                     night_actions.journalist_action = true;
                     night_actions.journalist_choice = {i, j};
@@ -482,7 +486,7 @@ public:
                         std::vector<Shared_pointer<Player>>) override
     {
         simple_shuffle(alive_ids);
-        for (size_t i = 0; i < alive_ids.size(); i++)
+        for (const auto &i : alive_ids)
         {
             // Самурай защищает любого, но не себе
             if (i != id)
@@ -751,11 +755,21 @@ public:
     {
         players.clear();
         logger = new Logger{"start.log"};
-        logger->log(Loglevel::INFO, "======================= GAME STARTED!!! =======================");
+        logger->log(Loglevel::INFO, "===================================== GAME STARTED!!! =====================================");
 
+        std::cout << "Today in our city these wonderful gentlemen will decide who among them will continue to live and who will not." << std::endl;
+        std::cout << "=====================================" << " ROLES " << "=====================================" << std::endl;
+        for (size_t i = 0; i < roles.size(); i++) 
+        {
+            std::cout << i << ": " << roles[i] << std::endl;
+        }
+        
         // Запрос у пользователя, хочет ли он играть
         std::cout << "Wanna join our city?? Select the number (from 0 to " << roles.size() - 1
                   << ") if you want to play or -1 if you are just a spectator." << std::endl;
+
+
+        
         int choice;
         std::cin >> choice;
 
@@ -943,6 +957,9 @@ public:
 
             logger = new Logger{"day_" + std::to_string(day_number) + ".log"};
             logger->log(Loglevel::INFO, "==== DAY " + std::to_string(day_number) + " ====");
+            std::cout << std::endl;
+            std::cout << "===================================== DAY" << std::to_string(day_number) << " =====================================" << std::endl;
+            std::cout << "===================================== !VOTING! =====================================" << std::endl;
 
             // голосуем
             day_vote();
@@ -957,6 +974,9 @@ public:
             }
 
             // ночь
+            std::cout << std::endl;
+            std::cout << "===================================== NIGHT" << std::to_string(day_number) << " =====================================" << std::endl;
+
             night_act();
             reelection_mafia_boss();
             cur_status = game_status();
@@ -982,16 +1002,20 @@ public:
         {
             logger->log(Loglevel::INFO, "This city is mired in crime, the mafia has gained the upper hand and now controls the city.");
             logger->log(Loglevel::INFO, "MAFIA WIN");
+            std::cout << "===================================== MAFIA WIN =====================================" << std::endl;
         }
         else if (cur_status == "maniac")
         {
             logger->log(Loglevel::INFO, "He escaped from the mental hospital and systematically and gradually killed every inhabitant of the city. Neither the mafia nor the sheriff could stop him. He is a maniac.");
             logger->log(Loglevel::INFO, "MANIAC WINS");
+            std::cout << "===================================== MANIAC WINS =====================================" << std::endl;
+
         }
         else if (cur_status == "civilian")
         {
             logger->log(Loglevel::INFO, "This city is absolutely safe to live in. Peaceful residents organized a successful democratic election, rooted out a mafia clan, and identified a serial killer.");
             logger->log(Loglevel::INFO, "CIVILIANS WIN");
+            std::cout << "===================================== CIVILIANS WIN =====================================" << std::endl;
         }
 
         // Записываем выживших игроков
@@ -1034,6 +1058,8 @@ public:
             votes[value]++;
             logger->log(Loglevel::INFO,
                         TPrettyPrinter().f("Player ").f(player->id).f(" voted for player ").f(value).Str());
+            //std::cout << std::endl;
+            std::cout << TPrettyPrinter().f("Player ").f(player->id).f(" voted for player ").f(value).Str() << std::endl;
         }
 
         auto key_val = std::max_element(votes.begin(), votes.end(),
@@ -1046,6 +1072,8 @@ public:
         players[key_val->first]->alive = false;
         logger->log(Loglevel::INFO,
                     TPrettyPrinter().f("Player ").f(key_val->first).f(" was hanged in the city square by peaceful means of democracy and voting.").Str());
+        //std::cout << std::endl;
+        std::cout << TPrettyPrinter().f("Player ").f(key_val->first).f(" KILLED. He was hanged in the city square by peaceful means of democracy and voting.").Str() << std::endl << std::endl;
     }
 
     void night_act()
@@ -1056,6 +1084,22 @@ public:
         auto alives_ids_rng = alives | view::transform([](auto p)
                                                        { return p->id; });
         std::vector<size_t> alives_ids{alives_ids_rng.begin(), alives_ids_rng.end()};
+
+        /*
+        for (const auto &pl : alives)
+        {
+            std::cout << "alive: " << std::to_string(pl->id) << " ";
+        }
+        std::cout << std::endl;
+
+        for (const auto &id : alives_ids)
+        {
+            std::cout << "alive: " << std::to_string(id) << " ";
+        }
+        std::cout << std::endl;
+        */
+
+
 
         // БД ночи очищается
         NightActions night_actions{players_num};
@@ -1083,6 +1127,7 @@ public:
         if (night_actions.commissar_action)
         {
             logger->log(Loglevel::INFO, TPrettyPrinter().f("Commissar checked player ").f(night_actions.commissar_choice).f(". He was a ").f(players[night_actions.commissar_choice]->role).Str());
+            std::cout << "This night commissar checked player " << std::to_string( night_actions.commissar_choice ) << std::endl;
         }
 
         if (night_actions.doctors_action)
@@ -1090,16 +1135,19 @@ public:
             logger->log(Loglevel::INFO, TPrettyPrinter().f("Doctor healed player ").f(night_actions.doctors_choice).Str());
             // Лечение снимает все атаки с игрока
             night_actions.killers[night_actions.doctors_choice].clear();
+            std::cout << "This night doctor healed player " << std::to_string( night_actions.doctors_choice ) << std::endl;
         }
 
         if (night_actions.journalist_action)
         {
             logger->log(Loglevel::INFO, TPrettyPrinter().f("Journalist checked players ").f(night_actions.journalist_choice.first).f(" and ").f(night_actions.journalist_choice.second).Str());
+            std::cout << "This night journalist checked players " << std::to_string(night_actions.journalist_choice.first) << " and " << std::to_string(night_actions.journalist_choice.second) << std::endl;
         }
 
         if (night_actions.samurai_action)
         {
             logger->log(Loglevel::INFO, TPrettyPrinter().f("Samurai protected player ").f(night_actions.samurai_choice).Str());
+            std::cout << "This night samurai protected player " << std::to_string(night_actions.samurai_choice) << std::endl;
             auto &killers_list = night_actions.killers[night_actions.samurai_choice];
             if (!killers_list.empty())
             {
@@ -1119,14 +1167,21 @@ public:
             if (!night_actions.killers[i].empty())
             {
                 auto log_message = TPrettyPrinter().f("Player ").f(i).f(" was killed by ").Str();
+                std::string msg = "Player " + std::to_string(i) + " was killed by "; 
                 for (size_t j = 0; j < night_actions.killers[i].size(); j++)
                 {
                     log_message += players[night_actions.killers[i][j]]->role;
+                    msg += players[night_actions.killers[i][j]]->role;
+
                     log_message += (j == night_actions.killers[i].size() - 1) ? "" : ", ";
+                    msg += (j == night_actions.killers[i].size() - 1) ? "" : ", ";
                 }
                 // убиваем
                 players[i]->alive = false;
+            
+
                 logger->log(Loglevel::INFO, log_message);
+                std::cout << "This night " << msg << std::endl;
             }
         }
     }
@@ -1134,11 +1189,11 @@ public:
 
 int main(void)
 {
-    int i = 7;
+    //int i = 7;
     //std::time_t result = std::time(nullptr);
     // std::srand((int) result);
-    std::srand(i);
-    std::cout << "========== SRAND = " << i << " ==========" << std::endl;
+    std::srand(5);
+    std::cout << "========== SRAND = " << 5 << " ==========" << std::endl;
 
     unsigned int n;
     std::cout << "How many players will play this game?" << std::endl;
