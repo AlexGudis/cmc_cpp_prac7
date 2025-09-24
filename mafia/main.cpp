@@ -772,8 +772,18 @@ public:
         
         int choice;
         std::cin >> choice;
+        std::string human_role = "";
+
+        if (choice != -1)
+        {
+            human_role = roles[choice];
+
+            // Это нужно, чтобы когда реальный игрок играл за кого-то он не знал, кто есть кто
+            simple_shuffle(roles);
+        }
 
         std::vector<size_t> mafia_buf{}; //  буфер для ID мафиози
+
 
         // Создание по распределениею
         for (size_t i = 0; i < roles.size(); i++)
@@ -832,6 +842,7 @@ public:
                 samurai_id = i;
             }
 
+            /*
             // Если игрок выбрал конкретную роль, помечаем её
             if (std::cmp_equal(choice, i))
             {
@@ -841,6 +852,18 @@ public:
                 {
                     std::cout << "Your path is long, so fulfill it beautifully." << std::endl;
                 }
+            }
+            */
+        }
+
+        // В какую-то мафию или какого-то мирного или другую роль помечаем живым игроком
+        for (const auto &pl : players)
+        {
+            if (human_role == pl->role)
+            {
+                pl->is_real_player = true;
+                std::cout << "Remember your ID, it might be usefull. ID = " << std::to_string(pl->id) << std::endl;
+                break;
             }
         }
 
@@ -959,6 +982,16 @@ public:
             logger->log(Loglevel::INFO, "==== DAY " + std::to_string(day_number) + " ====");
             std::cout << std::endl;
             std::cout << "===================================== DAY" << std::to_string(day_number) << " =====================================" << std::endl;
+            
+            std::cout << "This players still alive: ";
+            for (const auto &pl : players) {
+                if (pl->alive)
+                {
+                    std::cout << pl->id << " ";
+                }
+            }
+            std::cout << std::endl;
+            
             std::cout << "===================================== !VOTING! =====================================" << std::endl;
 
             // голосуем
@@ -1178,6 +1211,11 @@ public:
                 }
                 // убиваем
                 players[i]->alive = false;
+
+                if (i == players[i]->id && players[i]->role == "samurai")
+                {
+                    msg += ". Haraciri is the only one way in this time. I've done my best";
+                }
             
 
                 logger->log(Loglevel::INFO, log_message);
