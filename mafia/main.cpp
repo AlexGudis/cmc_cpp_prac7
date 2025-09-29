@@ -270,9 +270,9 @@ public:
         }
 
         // Иначе проверяем нового игрока
-        //auto max_id = *std::max_element(alive_ids.begin(), alive_ids.end());
+        // auto max_id = *std::max_element(alive_ids.begin(), alive_ids.end());
 
-        for (const auto &i: alive_ids)
+        for (const auto &i : alive_ids)
         {
 
             // Ищем еще не проверенного игрока
@@ -381,7 +381,7 @@ public:
             std::cout << i << " ";
         }
         std::cout << std::endl;
-        //std::cout << "No no no. It is not working this way. U have already healed this person last night!" << std::endl;
+        // std::cout << "No no no. It is not working this way. U have already healed this person last night!" << std::endl;
 
         while (true)
         {
@@ -441,8 +441,9 @@ public:
         {
             std::cout << i << " ";
         }
+
         std::cout << std::endl;
-        std::cout << "You can't check yourself)))" << std::endl;
+        //std::cout << "You can't check yourself)))" << std::endl;
 
         while (true)
         {
@@ -560,6 +561,7 @@ public:
             {
                 if (std::find(known_mafia.begin(), known_mafia.end(), alive_ids[i]) == known_mafia.end())
                 {
+                    std::cout << "Mafia has chosen Player " << alive_ids[i] << " to KILL!" << std::endl;
                     night_actions.killers[alive_ids[i]].push_back(id);
                     return;
                 }
@@ -651,6 +653,7 @@ public:
         {
             if (alive_ids[i] != id)
             { // Не может убить себя
+                std::cout << "Crazy maniac decided to KILL Player " << alive_ids[i] << "!" << std::endl;
                 night_actions.killers[alive_ids[i]].push_back(id);
                 return;
             }
@@ -688,6 +691,52 @@ concept PlayerConcept = requires(T player,
     // тип T имеет  act
     { player.act(ids, night_actions, players) } -> std::same_as<Task>;
 };
+
+// Считывание ролей из конфигурационного файла
+std::vector<std::string> parseRolesFromConfigSimple(const std::string& configPath) {
+    std::vector<std::string> roles;
+    
+    // Проверка существования файла
+    std::ifstream file(configPath);
+    if (!file.is_open()) {
+        throw std::runtime_error("Config file not found: " + configPath);
+    }
+    
+    std::string line;
+    while (std::getline(file, line)) {
+        // Пропускаем пустые строки и комментарии
+        if (line.empty() || line[0] == '#') {
+            continue;
+        }
+        
+        size_t colonPos = line.find(':');
+        if (colonPos == std::string::npos) {
+            continue; // Пропускаем строки без разделителя
+        }
+        
+        std::string roleName = line.substr(0, colonPos);
+        roleName.erase(0, roleName.find_first_not_of(" \t"));
+        roleName.erase(roleName.find_last_not_of(" \t") + 1);
+        
+        std::string countStr = line.substr(colonPos + 1);
+        countStr.erase(0, countStr.find_first_not_of(" \t"));
+        countStr.erase(countStr.find_last_not_of(" \t") + 1);
+        
+        try {
+            int count = std::stoi(countStr);
+            
+            for (int i = 0; i < count; ++i) {
+                roles.push_back(roleName);
+            }
+            
+        } catch (const std::exception& e) {
+            std::cerr << "Warning: Invalid number format for role '" << roleName << "': " << countStr << std::endl;
+        }
+    }
+    
+    file.close();
+    return roles;
+}
 
 // Класс ведущего игру
 template <PlayerConcept Player>
@@ -759,23 +808,22 @@ public:
 
         std::cout << "Today in our city these wonderful gentlemen will decide who among them will continue to live and who will not." << std::endl;
         std::cout << "=====================================" << " ROLES " << "=====================================" << std::endl;
-        for (size_t i = 0; i < roles.size(); i++) 
+        for (size_t i = 0; i < roles.size(); i++)
         {
             std::cout << i << ": " << roles[i] << std::endl;
         }
-        
+
         // Запрос у пользователя, хочет ли он играть
         std::cout << "Wanna join our city?? Select the number (from 0 to " << roles.size() - 1
                   << ") if you want to play or -1 if you are just a spectator." << std::endl;
 
-
-        
         int choice;
         std::cin >> choice;
         std::string human_role = "";
 
         if (choice != -1)
         {
+            //std::cout << "-1 INPUT" << std::endl;
             human_role = roles[choice];
 
             // Это нужно, чтобы когда реальный игрок играл за кого-то он не знал, кто есть кто
@@ -784,11 +832,12 @@ public:
 
         std::vector<size_t> mafia_buf{}; //  буфер для ID мафиози
 
-
+        size_t i = 0;
         // Создание по распределениею
-        for (size_t i = 0; i < roles.size(); i++)
+        for (const auto &role : roles)
         {
-            auto role = roles[i];
+            //std::cout << "TEEEEST" << std::endl;
+            //auto role = roles[i];
             if (role == "civilian")
             {
                 logger->log(Loglevel::INFO,
@@ -854,7 +903,10 @@ public:
                 }
             }
             */
+           ++i;
         }
+
+        //std::cout << "END LOOP" << std::endl;
 
         // В какую-то мафию или какого-то мирного или другую роль помечаем живым игроком
         for (const auto &pl : players)
@@ -867,12 +919,15 @@ public:
             }
         }
 
+        //std::cout << "HUMAN ROLE" << std::endl;
         // Для мафий в их списки известных мафиози добавляем других мафов (нужно в ночных действиях)
         for (auto i : mafia_buf)
         {
             players[i]->known_mafia.insert(players[i]->known_mafia.end(), mafia_buf.begin(),
                                            mafia_buf.end());
         }
+
+        //std::cout << "MAFIA LOOP" << std::endl;
 
         // босс случаен
         simple_shuffle(mafia_buf);
@@ -982,16 +1037,17 @@ public:
             logger->log(Loglevel::INFO, "==== DAY " + std::to_string(day_number) + " ====");
             std::cout << std::endl;
             std::cout << "===================================== DAY" << std::to_string(day_number) << " =====================================" << std::endl;
-            
+
             std::cout << "This players still alive: ";
-            for (const auto &pl : players) {
+            for (const auto &pl : players)
+            {
                 if (pl->alive)
                 {
                     std::cout << pl->id << " ";
                 }
             }
             std::cout << std::endl;
-            
+
             std::cout << "===================================== !VOTING! =====================================" << std::endl;
 
             // голосуем
@@ -1042,7 +1098,6 @@ public:
             logger->log(Loglevel::INFO, "He escaped from the mental hospital and systematically and gradually killed every inhabitant of the city. Neither the mafia nor the sheriff could stop him. He is a maniac.");
             logger->log(Loglevel::INFO, "MANIAC WINS");
             std::cout << "===================================== MANIAC WINS =====================================" << std::endl;
-
         }
         else if (cur_status == "civilian")
         {
@@ -1091,7 +1146,7 @@ public:
             votes[value]++;
             logger->log(Loglevel::INFO,
                         TPrettyPrinter().f("Player ").f(player->id).f(" voted for player ").f(value).Str());
-            //std::cout << std::endl;
+            // std::cout << std::endl;
             std::cout << TPrettyPrinter().f("Player ").f(player->id).f(" voted for player ").f(value).Str() << std::endl;
         }
 
@@ -1105,8 +1160,9 @@ public:
         players[key_val->first]->alive = false;
         logger->log(Loglevel::INFO,
                     TPrettyPrinter().f("Player ").f(key_val->first).f(" was hanged in the city square by peaceful means of democracy and voting.").Str());
-        //std::cout << std::endl;
-        std::cout << TPrettyPrinter().f("Player ").f(key_val->first).f(" KILLED. He was hanged in the city square by peaceful means of democracy and voting.").Str() << std::endl << std::endl;
+        // std::cout << std::endl;
+        std::cout << TPrettyPrinter().f("Player ").f(key_val->first).f(" KILLED. He was hanged in the city square by peaceful means of democracy and voting.").Str() << std::endl
+                  << std::endl;
     }
 
     void night_act()
@@ -1131,8 +1187,6 @@ public:
         }
         std::cout << std::endl;
         */
-
-
 
         // БД ночи очищается
         NightActions night_actions{players_num};
@@ -1160,7 +1214,7 @@ public:
         if (night_actions.commissar_action)
         {
             logger->log(Loglevel::INFO, TPrettyPrinter().f("Commissar checked player ").f(night_actions.commissar_choice).f(". He was a ").f(players[night_actions.commissar_choice]->role).Str());
-            std::cout << "This night commissar checked player " << std::to_string( night_actions.commissar_choice ) << std::endl;
+            std::cout << "This night commissar checked player " << std::to_string(night_actions.commissar_choice) << std::endl;
         }
 
         if (night_actions.doctors_action)
@@ -1168,7 +1222,7 @@ public:
             logger->log(Loglevel::INFO, TPrettyPrinter().f("Doctor healed player ").f(night_actions.doctors_choice).Str());
             // Лечение снимает все атаки с игрока
             night_actions.killers[night_actions.doctors_choice].clear();
-            std::cout << "This night doctor healed player " << std::to_string( night_actions.doctors_choice ) << std::endl;
+            std::cout << "This night doctor healed player " << std::to_string(night_actions.doctors_choice) << std::endl;
         }
 
         if (night_actions.journalist_action)
@@ -1200,7 +1254,7 @@ public:
             if (!night_actions.killers[i].empty())
             {
                 auto log_message = TPrettyPrinter().f("Player ").f(i).f(" was killed by ").Str();
-                std::string msg = "Player " + std::to_string(i) + " was killed by "; 
+                std::string msg = "Player " + std::to_string(i) + " was killed by ";
                 for (size_t j = 0; j < night_actions.killers[i].size(); j++)
                 {
                     log_message += players[night_actions.killers[i][j]]->role;
@@ -1216,7 +1270,6 @@ public:
                 {
                     msg += ". Haraciri is the only one way in this time. I've done my best";
                 }
-            
 
                 logger->log(Loglevel::INFO, log_message);
                 std::cout << "This night " << msg << std::endl;
@@ -1227,21 +1280,39 @@ public:
 
 int main(void)
 {
-    //int i = 7;
-    //std::time_t result = std::time(nullptr);
-    // std::srand((int) result);
+    // int i = 7;
+    // std::time_t result = std::time(nullptr);
+    //  std::srand((int) result);
     std::srand(5);
     std::cout << "========== SRAND = " << 5 << " ==========" << std::endl;
 
-    unsigned int n;
-    std::cout << "How many players will play this game?" << std::endl;
-    std::cin >> n;
+    std::string check;
+    std::cout << "Will the roles be generated automatically=(g) or taken from a configuration file?=(f)" << std::endl;
+    std::cin >> check;
+    std::vector<std::string> roles;
 
-    auto game = Game<Player>(n);
+    // default инициализация
+    auto game = Game<Player>(1); 
 
-    auto roles = game.get_random_roles();
 
-    // инициалищация игроков
+    // НУЖНО ОБРАБАТЫВАТЬ ОТКРЫТИЕ ФАЙЛА В ФУНКЦИИ ОТДЕЛЬНО, А НЕ ПЕРЕДВАТЬ УКАЗАТЕЛИ НА ФАЙЛ И ТП
+
+    if (check == "g")
+    {
+        unsigned int n;
+        std::cout << "How many players will play this game?" << std::endl;
+        std::cin >> n;
+
+        game = Game<Player>(n);
+        roles = game.get_random_roles();
+    }
+    else
+    {
+        roles = parseRolesFromConfigSimple("./config.yaml");
+        game = Game<Player>(roles.size());
+    }
+
+    // инициализация игроков
     game.init_players(roles);
 
     game.main_loop();
