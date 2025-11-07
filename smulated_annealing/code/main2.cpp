@@ -70,6 +70,7 @@ struct ScheduleSolution : Solution {
     }
 
     // создать случайное начальное решение (равномерное распределение)
+    // TODO: А нужен ли мне вообще этот метод если изначально так и так создаётся solution для передачи алгоритму ИО?
     static unique_ptr<ScheduleSolution> randomInit(int N, int M, const vector<int>& w, mt19937 &rng) {
         auto s = make_unique<ScheduleSolution>(N, M, w);
         // случайная перестановка работ, затем разложить по очереди
@@ -274,6 +275,7 @@ struct SimulatedAnnealing {
         : T0(T0_), maxIterations(maxIter_), noImproveLimit(noImproveLimit_),
           cooling(move(cooling_)), mutation(mutation_)
     {
+        // Надо ли вот это?
         if (seed == 0) {
             random_device rd;
             seed = rd();
@@ -345,12 +347,12 @@ struct SimulatedAnnealing {
 };
 
 // ------------------------------ Генератор входных данных ------------------------------
-struct GeneratorConfig {
-    int N;
-    int M;
-    int minW;
-    int maxW;
-};
+// struct GeneratorConfig {
+//     int N;
+//     int M;
+//     int minW;
+//     int maxW;
+// };
 
 vector<int> generateDurations(int N, int minW, int maxW, mt19937 &rng) {
     uniform_int_distribution<int> d(minW, maxW);
@@ -360,17 +362,17 @@ vector<int> generateDurations(int N, int minW, int maxW, mt19937 &rng) {
 }
 
 // Сохранить в CSV: первая строка N,M, вторая — длительности
-void saveCSV(const string &filename, int N, int M, const vector<int> &w) {
-    ofstream out(filename);
-    out << "N,M\n" << N << "," << M << "\n";
-    out << "durations\n";
-    for (size_t i = 0; i < w.size(); ++i) {
-        out << w[i];
-        if (i + 1 < w.size()) out << ",";
-    }
-    out << "\n";
-    out.close();
-}
+// void saveCSV(const string &filename, int N, int M, const vector<int> &w) {
+//     ofstream out(filename);
+//     out << "N,M\n" << N << "," << M << "\n";
+//     out << "durations\n";
+//     for (size_t i = 0; i < w.size(); ++i) {
+//         out << w[i];
+//         if (i + 1 < w.size()) out << ",";
+//     }
+//     out << "\n";
+//     out.close();
+// }
 
 
 // ----------------------------- Парсинг данных из csv файла ---------------------------------
@@ -478,14 +480,14 @@ int main(int argc, char** argv) {
         std::cout  << "[Mode 4] Ввод из файла: " << argv[2] << std::endl;
         try {
             InputData data = readCSV(argv[2]);
-            cout << "Файл прочитан успешно!\n";
-            cout << "N=" << data.N << ", M=" << data.M
-                 << ", cooling=" << data.cooling
-                 << ", minW=" << data.minW
-                 << ", maxW=" << data.maxW << "\n";
-            cout << "Длительности работ: ";
-            for (int t : data.w) cout << t << " ";
-            cout << "\n";
+            // cout << "Файл прочитан успешно!\n";
+            // cout << "N=" << data.N << ", M=" << data.M
+            //      << ", cooling=" << data.cooling
+            //      << ", minW=" << data.minW
+            //      << ", maxW=" << data.maxW << "\n";
+            // cout << "Длительности работ: ";
+            // for (int t : data.w) cout << t << " ";
+            // cout << "\n";
 
             N = data.N;
             M = data.M;
@@ -562,7 +564,7 @@ int main(int argc, char** argv) {
     cout << best->toString() << "\n";
 
     // Снять статистику и сохранить входные данные в CSV для отчёта
-    saveCSV("input_gen.csv", N, M, w);
+    //saveCSV("input_gen.csv", N, M, w);
     cout << "Input saved to input_gen.csv\n";
 
     return 0;
