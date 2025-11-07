@@ -59,10 +59,6 @@ struct ScheduleSolution : Solution {
     vector<int> w; // длительности работ w[i], расположены по индексам. По индексу работы получаю её время
     vector<vector<int>> jobLists; // jobLists[j] - список индексов работ на процессоре j
 
-    // Кеш сумм по процессорам (для быстрого пересчёта) — обновляется по необходимости
-    mutable vector<int> procSumCache;
-    mutable bool cacheValid = false;
-
     ScheduleSolution() = default;
 
     ScheduleSolution(int N_, int M_, const vector<int> &w_) : N(N_), M(M_), w(w_) {
@@ -71,8 +67,6 @@ struct ScheduleSolution : Solution {
         for (int i = 0; i < N; ++i) {
             jobLists[i % M].push_back(i);
         }
-        procSumCache.assign(M, 0);
-        cacheValid = false;
     }
 
     // создать случайное начальное решение (равномерное распределение)
@@ -86,7 +80,6 @@ struct ScheduleSolution : Solution {
         for (int i = 0; i < N; ++i) {
             s->jobLists[i % M].push_back(perm[i]);
         }
-        s->cacheValid = false;
         return s;
     }
 
@@ -95,31 +88,8 @@ struct ScheduleSolution : Solution {
         auto s = make_unique<ScheduleSolution>();
         s->N = N; s->M = M; s->w = w;
         s->jobLists = jobLists;
-        s->cacheValid = cacheValid;
-        s->procSumCache = procSumCache;
         return s;
     }
-
-    // вычислить суммарное время на каждом процессоре и кэшировать
-    void computeProcSums() const {
-        if (cacheValid) return;
-        procSumCache.assign(M, 0);
-        for (int j = 0; j < M; ++j) {
-            int sum = 0;
-            for (int id : jobLists[j]) sum += w[id];
-            procSumCache[j] = sum;
-        }
-        cacheValid = true;
-    }
-
-    // K1 = T_max - T_min (разбалансированность по суммарному времени каждого процессора)
-    // double energy() const override {
-    //     computeProcSums();
-    //     if (M == 0) return 0.0;
-    //     int Tmax = *max_element(procSumCache.begin(), procSumCache.end());
-    //     int Tmin = *min_element(procSumCache.begin(), procSumCache.end());
-    //     return double(Tmax - Tmin);
-    // }
 
 
     // Вычисление значения целевой функции. В нашем случае это критерий K1, который стараемся минимизировать
@@ -146,22 +116,17 @@ struct ScheduleSolution : Solution {
         return double(Tmax - Tmin);
     }
 
-    // Возвращает Tmax, Tmin и вектор сумм (полезно для вывода)
-    tuple<int,int,vector<int>> getProcStats() const {
-        computeProcSums();
-        int Tmax = *max_element(procSumCache.begin(), procSumCache.end());
-        int Tmin = *min_element(procSumCache.begin(), procSumCache.end());
-        return {Tmax, Tmin, procSumCache};
-    }
-
+    // текстовое представление решения
     string toString() const override {
         ostringstream oss;
-
-        // TODO: избавиться от getProcStats и прочего кеша, это лишнее. Вывод мне сейчас нравится
-        auto [Tmax, Tmin, sums] = getProcStats();
         oss << "Schedule (M=" << M << ", N=" << N << "): (K1)=" << criteria() << "\n";
+
         for (int j = 0; j < M; ++j) {
-            oss << " CPU " << j << " (sum=" << sums[j] << "): ";
+            int sum = 0;
+            for (int id : jobLists[j])
+                sum += w[id];
+
+            oss << " CPU " << j << " (sum=" << sum << "): ";
             for (size_t k = 0; k < jobLists[j].size(); ++k) {
                 int id = jobLists[j][k];
                 oss << id << "(" << w[id] << ")";
@@ -169,6 +134,7 @@ struct ScheduleSolution : Solution {
             }
             oss << "\n";
         }
+
         return oss.str();
     }
 
@@ -181,7 +147,6 @@ struct ScheduleSolution : Solution {
         if (pos < 0) pos = 0;
         if (pos > (int)jobLists[p_to].size()) pos = jobLists[p_to].size();
         jobLists[p_to].insert(jobLists[p_to].begin() + pos, job);
-        cacheValid = false;
     }
 
     // swap двух работ (p1,i1) и (p2,i2)
@@ -190,7 +155,6 @@ struct ScheduleSolution : Solution {
         if (i1 < 0 || i1 >= (int)jobLists[p1].size()) return;
         if (i2 < 0 || i2 >= (int)jobLists[p2].size()) return;
         std::swap(jobLists[p1][i1], jobLists[p2][i2]);
-        cacheValid = false;
     }
 };
 
@@ -415,7 +379,7 @@ int main(int argc, char** argv) {
 
     int N = 5, M = 2;
     int minW = 1, maxW = 20;
-    uint32_t seed = 580327455;
+    uint32_t seed = 0;
     string mode = "auto";        // режим по умолчанию
     string coolingType = "Cauchy";
     vector<int> w;               // длительности работ
