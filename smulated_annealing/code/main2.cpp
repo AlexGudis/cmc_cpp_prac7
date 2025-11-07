@@ -1,7 +1,14 @@
-// sa_schedule.cpp
-// Симуляция имитации отжига для задачи расписания N работ на M процессорах
-// Автор: код-скелет подготовлен ассистентом (для студента)
-// Компиляция: g++ -std=c++17 sa_schedule.cpp -O2 -o sa_schedule
+/*
+main2.cpp
+Симуляция имитации отжига для задачи расписания N работ на M процессорах
+Компиляция: g++ -std=c++17 main2.cpp -O2 -o main2
+
+Варианты запуска кода:
+1) Данные генерируются автоматически и/или указываются в коде
+2) Данные N, M, закон понижения температуры берутся из параметров и работы генерируются
+3) Данные N, M, закон понижения температуры и работы вводятся пользователем
+4) Данные N, M, закон понижения температуры и работы берутся из файла
+*/
 
 #include <bits/stdc++.h>
 using namespace std;
@@ -21,7 +28,7 @@ using namespace std;
 struct Solution {
     virtual ~Solution() = default;
     // значение минимизируемого критерия (энергия). Чем меньше — лучше.
-    virtual double energy() const = 0;
+    virtual double criteria() const = 0;
     // глубокая копия решения
     virtual unique_ptr<Solution> clone() const = 0;
     // текстовое представление (для печати)
@@ -115,7 +122,8 @@ struct ScheduleSolution : Solution {
     // }
 
 
-    double energy() const override {
+    // Вычисление значения целевой функции. В нашем случае это критерий K1, который стараемся минимизировать
+    double criteria() const override {
         // Массив всех времен завершения всех работ
         vector<int> finishTimes;
     
@@ -151,7 +159,7 @@ struct ScheduleSolution : Solution {
 
         // TODO: избавиться от getProcStats и прочего кеша, это лишнее. Вывод мне сейчас нравится
         auto [Tmax, Tmin, sums] = getProcStats();
-        oss << "Schedule (M=" << M << ", N=" << N << "): energy(K1)=" << energy() << "\n";
+        oss << "Schedule (M=" << M << ", N=" << N << "): (K1)=" << criteria() << "\n";
         for (int j = 0; j < M; ++j) {
             oss << " CPU " << j << " (sum=" << sums[j] << "): ";
             for (size_t k = 0; k < jobLists[j].size(); ++k) {
@@ -313,58 +321,61 @@ struct SimulatedAnnealing {
     // Запуск ИО. initialSolution должен быть валидной (и будет скопирован).
     unique_ptr<Solution> run(const Solution &initial) {
         // рабочие копии
-        unique_ptr<Solution> current = initial.clone();
-        unique_ptr<Solution> best = current->clone();
-        double currentE = current->energy();
-        double bestE = currentE;
+        //unique_ptr<Solution> current = initial.clone();
+        unique_ptr<Solution> best_solution = initial.clone();
+        //double current_criteria = current->criteria();
+        double best_solution_criteria = best_solution->criteria();
 
         double T = T0;
         int iter = 0;
         int noImprove = 0;
 
-        while (iter < maxIterations && T > Tmin && noImprove < noImproveLimit) {
-            // создаём кандидат
-            unique_ptr<Solution> candidate = current->clone();
+        while (iter < maxIterations && noImprove < noImproveLimit) {
+            // создаём кандидата
+            unique_ptr<Solution> new_solution = best_solution->clone();
             // применяем мутацию (in-place)
-            mutation->apply(*candidate, rng);
+            mutation->apply(*new_solution, rng);
 
-            double candE = candidate->energy();
-            double delta = candE - currentE;
+            double new_solution_criteria = new_solution->criteria();
+            //double delta = new_solution_criteria - current_criteria;
+
+            std::cout << "New ||| Old" << std::endl;
+            std::cout << new_solution_criteria << " ||| " << best_solution_criteria << "\n" << std::endl;
 
             bool accept = false;
-            if (delta <= 0) {
-                accept = true; // улучшение
-            } else {
-                // вероятностное принятие по метрополису
-                double prob = exp(-delta / max(1e-12, T));
-                uniform_real_distribution<double> u(0.0, 1.0);
-                accept = (u(rng) < prob);
-            }
+            if (new_solution_criteria < best_solution_criteria) {
 
-            if (accept) {
-                current = move(candidate);
-                currentE = candE;
-            }
-
-            if (currentE < bestE - 1e-12) {
-                best = current->clone();
-                bestE = currentE;
+                best_solution_criteria = new_solution_criteria;
                 noImprove = 0;
+                best_solution = move(new_solution);
+
+
             } else {
-                ++noImprove;
+                // std::cout << "L1\n";
+                double acceptanceProbability = std::exp(-(new_solution_criteria - best_solution_criteria) / T);
+                
+                // std::cout << acceptanceProbability << ' ' << prob << std::endl;
+                if (acceptanceProbability >= static_cast<double>(rand()) / RAND_MAX)
+                {
+                    // Принимаем новое решение
+                    
+                    noImprove = 0;
+                    best_solution = move(new_solution);
+
+                }
+                else
+                {
+                    // Не принимаем новое решение
+                    noImprove++;
+                }
             }
 
-            // обновление температуры
+            // обновление температуры и увеличение счётчика
             ++iter;
-            double newT = cooling->nextTemperature(T, iter);
-            if (!(newT < T)) {
-                // чтобы гарантировать понижение — если метод не понижает, явно понижаем слегка
-                newT = T * 0.999;
-            }
-            T = newT;
+            T = cooling->nextTemperature(T, iter);
         }
 
-        return best;
+        return best_solution;
     }
 };
 
@@ -405,7 +416,7 @@ int main(int argc, char** argv) {
     int N = 5;      // число работ
     int M = 2;       // число процессоров
     int minW = 1, maxW = 20;
-    uint32_t seed = 0; // 0 -> случайно, иначе фиксированный seed
+    uint32_t seed = 2; // 0 -> случайно, иначе фиксированный seed
 
     // Если пользователь передал аргументы: N M seed
     if (argc >= 3) {
