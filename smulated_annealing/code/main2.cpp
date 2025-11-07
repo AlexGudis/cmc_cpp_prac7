@@ -299,16 +299,15 @@ public:
 struct SimulatedAnnealing {
     // параметры
     double T0;
-    double Tmin;
     int maxIterations; // макс. число итераций (внешних шагов)
     int noImproveLimit; // число итераций без улучшения для остановки (K = 100 по ТЗ)
     unique_ptr<CoolingLaw> cooling;
     shared_ptr<Mutation> mutation;
     mt19937 rng;
 
-    SimulatedAnnealing(double T0_, double Tmin_, int maxIter_, int noImproveLimit_,
+    SimulatedAnnealing(double T0_, int maxIter_, int noImproveLimit_,
                        unique_ptr<CoolingLaw> cooling_, shared_ptr<Mutation> mutation_, uint32_t seed = 0)
-        : T0(T0_), Tmin(Tmin_), maxIterations(maxIter_), noImproveLimit(noImproveLimit_),
+        : T0(T0_), maxIterations(maxIter_), noImproveLimit(noImproveLimit_),
           cooling(move(cooling_)), mutation(mutation_)
     {
         if (seed == 0) {
@@ -326,6 +325,8 @@ struct SimulatedAnnealing {
         //double current_criteria = current->criteria();
         double best_solution_criteria = best_solution->criteria();
 
+        //std::cout << "best crit before loop = " << best_solution_criteria << std::endl;
+
         double T = T0;
         int iter = 0;
         int noImprove = 0;
@@ -339,8 +340,8 @@ struct SimulatedAnnealing {
             double new_solution_criteria = new_solution->criteria();
             //double delta = new_solution_criteria - current_criteria;
 
-            std::cout << "New ||| Old" << std::endl;
-            std::cout << new_solution_criteria << " ||| " << best_solution_criteria << "\n" << std::endl;
+            //std::cout << "New ||| Old" << std::endl;
+            //std::cout << new_solution_criteria << " ||| " << best_solution_criteria << "\n" << std::endl;
 
             bool accept = false;
             if (new_solution_criteria < best_solution_criteria) {
@@ -412,50 +413,116 @@ int main(int argc, char** argv) {
     ios::sync_with_stdio(false);
     cin.tie(nullptr);
 
-    // Параметры (можно менять):
-    int N = 5;      // число работ
-    int M = 2;       // число процессоров
+    int N = 5, M = 2;
     int minW = 1, maxW = 20;
-    uint32_t seed = 2; // 0 -> случайно, иначе фиксированный seed
+    uint32_t seed = 580327455;
+    string mode = "auto";        // режим по умолчанию
+    string coolingType = "Cauchy";
+    vector<int> w;               // длительности работ
 
-    // Если пользователь передал аргументы: N M seed
-    if (argc >= 3) {
-        N = stoi(argv[1]);
-        M = stoi(argv[2]);
-    }
-    if (argc >= 4) seed = (uint32_t)stoul(argv[3]);
 
     random_device rd;
-    if (seed == 0) seed = rd();
-    mt19937 rng(seed);
+    if (seed == 0) seed = rd(); // Недетерминированность алгоритма
+    mt19937 rng(rd());
+    rng.seed(seed);
 
-    auto w = generateDurations(N, minW, maxW, rng);
-    // Сгенерируем начальное случайное решение
+
+
+    /*
+    Варианты запуска кода:
+    1) Данные генерируются автоматически и/или указываются в коде
+    2) Данные N, M, закон понижения температуры берутся из параметров и работы генерируются
+    3) Данные N, M, закон понижения температуры и работы вводятся пользователем
+    4) Данные N, M, закон понижения температуры и работы берутся из файла
+    */
+    // ------------------ Режимы ------------------
+    if (argc == 1) {
+        std::cout << "[Mode 1] Автоматическая генерация (по умолчанию)\n";
+        N = 5; M = 2;
+        w = generateDurations(N, minW, maxW, rng);
+    }
+    else if (argc == 5 && string(argv[1]) == "default") {
+        std::cout << "[Mode 2] Аргументы командной строки\n";
+        N = stoi(argv[2]);
+        M = stoi(argv[3]);
+        coolingType = argv[4];
+        w = generateDurations(N, minW, maxW, rng);
+    }
+    else if (argc == 2 && string(argv[1]) == "manual") {
+        std::cout << "[Mode 3] Ввод вручную" << std::endl;
+        std::cout  << "Введите N (число работ) и M (число процессоров): " << std::endl;
+        cin >> N >> M;
+        std::cout  << "Введите закон охлаждения (Cauchy / Boltzmann / Mixed): " << std::endl;
+        cin >> coolingType;
+        std::cout  << "Введите длительности " << N << " работ: " << std::endl;
+        w.resize(N);
+        for (int i = 0; i < N; ++i) cin >> w[i];
+    }
+    else if (argc >= 3 && string(argv[1]) == "file") {
+        std::cout  << "[Mode 4] Ввод из файла: " << argv[2] << std::endl;
+        ifstream fin(argv[2]);
+        if (!fin) {
+            cerr << "Ошибка: не удалось открыть файл " << argv[2] << std::endl;
+            return 1;
+        }
+        fin >> N >> M >> coolingType;
+        w.resize(N);
+        for (int i = 0; i < N; ++i) fin >> w[i];
+        fin.close();
+    } else {
+        std::cerr << "Ошибка: неправильные аргументы.\n";
+        std::cerr << "Использование:\n";
+        std::cerr << "  ./main                    — авто режим\n";
+        std::cerr << "  ./main default N M cooling [seed] — параметры из аргументов\n";
+        std::cerr << "  ./main manual             — ввод вручную\n";
+        std::cerr << "  ./main file input.txt     — ввод из файла\n";
+        std::cout << std::endl;
+        return 1;
+    }
+
+
+
+    // ------------------ Настройки -----------------
+
+    std::cout << "\nПараметры:" << std::endl;
+    std::cout << "  N = " << N << ", M = " << M << ", seed = " << seed << std::endl;
+    std::cout << "  Закон охлаждения: " << coolingType << std::endl;
+    std::cout << "  Времена работ: " << std::endl;
+    for (int t : w) cout << t << " ";
+    std::cout << std::endl << std::endl;
+
     auto initial = ScheduleSolution::randomInit(N, M, w, rng);
+    std::cout << "Initial solution:\n" << initial->toString() << std::endl;
 
-    cout << "Initial solution:\n" << initial->toString() << "\n";
-
-    // Выберем мутации: смесь swap и move
-    vector<shared_ptr<Mutation>> muts;
-    muts.push_back(make_shared<SwapTwoJobs>());
-    muts.push_back(make_shared<MoveJob>());
+    // Мутации
+    vector<shared_ptr<Mutation>> muts = {
+        make_shared<SwapTwoJobs>(),
+        make_shared<MoveJob>()
+    };
     shared_ptr<Mutation> composite = make_shared<CompositeMutation>(muts);
 
-    // Параметры ИО
-    double T0 = 100.0;       // начальная температура (подбирать экспериментально)
-    double Tmin = 1e-6;
-    int maxIter = 1000000;   // верхний предел итераций (включает внутренние шаги)
-    int NO_IMPROVE_LIMIT = 100; // K=100 по заданию
+    // ------------------ Закон охлаждения ------------------
+    double T0 = 100.0;
+    int maxIter = 10000;
+    int NO_IMPROVE_LIMIT = 100;
+    unique_ptr<CoolingLaw> cooling;
 
-    // Три закона охлождения: выбери один (например exponential)
-    unique_ptr<CoolingLaw> cooling = make_unique<CauchyCooling>(T0);
+    if (coolingType == "Boltzmann") {
+        cooling = make_unique<BoltzmannCooling>(T0);
+    } else if (coolingType == "Mixed") {
+        cooling = make_unique<MixedCooling>(T0);
+    } else if (coolingType == "Cauchy") {
+        cooling = make_unique<CauchyCooling>(T0);
+    } else {
+        cerr << "Неизвестный тип охлаждения: " << coolingType << ". Используется Cauchy.\n\n";
+        cooling = make_unique<CauchyCooling>(T0);
+    }
 
-    // Альтернативы:
-    // unique_ptr<CoolingLaw> cooling = make_unique<LinearCooling>(0.5);
-    // unique_ptr<CoolingLaw> cooling = make_unique<LogarithmicCooling>(2.0);
 
-    SimulatedAnnealing sa(T0, Tmin, maxIter, NO_IMPROVE_LIMIT, move(cooling), composite, seed);
 
+    // ------------------ Запуск ИО ------------------
+    SimulatedAnnealing sa(T0, maxIter, NO_IMPROVE_LIMIT, move(cooling), composite, seed);
+    
     auto start = chrono::steady_clock::now();
     unique_ptr<Solution> best = sa.run(*initial);
     auto finish = chrono::steady_clock::now();
