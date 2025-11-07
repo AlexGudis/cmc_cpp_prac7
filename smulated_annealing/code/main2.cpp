@@ -372,6 +372,58 @@ void saveCSV(const string &filename, int N, int M, const vector<int> &w) {
     out.close();
 }
 
+
+// ----------------------------- Парсинг данных из csv файла ---------------------------------
+struct InputData {
+    int N, M;
+    string cooling;
+    int minW, maxW;
+    vector<int> w;
+};
+
+InputData readCSV(const string &filename) {
+    InputData data;
+    ifstream fin(filename);
+    if (!fin.is_open())
+        throw runtime_error("Не удалось открыть файл: " + filename);
+
+    string line;
+
+    // ---- первая строка ----
+    if (!getline(fin, line))
+        throw runtime_error("Ошибка: файл пустой");
+    {
+        stringstream ss(line);
+        string field;
+        vector<string> parts;
+        while (getline(ss, field, ',')) parts.push_back(field);
+        if (parts.size() < 5)
+            throw runtime_error("Ошибка: первая строка должна содержать N,M,cooling,minW,maxW");
+        data.N = stoi(parts[0]);
+        data.M = stoi(parts[1]);
+        data.cooling = parts[2];
+        data.minW = stoi(parts[3]);
+        data.maxW = stoi(parts[4]);
+    }
+
+    // ---- вторая строка ----
+    if (!getline(fin, line))
+        throw runtime_error("Ошибка: отсутствует строка с длительностями работ");
+    {
+        stringstream ss(line);
+        string value;
+        while (getline(ss, value, ',')) {
+            if (!value.empty())
+                data.w.push_back(stoi(value));
+        }
+        if ((int)data.w.size() != data.N)
+            cerr << "⚠️ Предупреждение: количество длительностей (" << data.w.size()
+                 << ") не совпадает с N=" << data.N << "\n";
+    }
+
+    return data;
+}
+
 // ------------------------------ Пример использования в main ------------------------------
 int main(int argc, char** argv) {
     ios::sync_with_stdio(false);
@@ -424,15 +476,29 @@ int main(int argc, char** argv) {
     }
     else if (argc >= 3 && string(argv[1]) == "file") {
         std::cout  << "[Mode 4] Ввод из файла: " << argv[2] << std::endl;
-        ifstream fin(argv[2]);
-        if (!fin) {
-            cerr << "Ошибка: не удалось открыть файл " << argv[2] << std::endl;
+        try {
+            InputData data = readCSV(argv[2]);
+            cout << "Файл прочитан успешно!\n";
+            cout << "N=" << data.N << ", M=" << data.M
+                 << ", cooling=" << data.cooling
+                 << ", minW=" << data.minW
+                 << ", maxW=" << data.maxW << "\n";
+            cout << "Длительности работ: ";
+            for (int t : data.w) cout << t << " ";
+            cout << "\n";
+
+            N = data.N;
+            M = data.M;
+            minW = data.minW;
+            maxW = data.maxW;
+            w = data.w;
+            coolingType = data.cooling;
+
+        }
+        catch (const exception &e) {
+            cerr << "Ошибка: " << e.what() << "\n";
             return 1;
         }
-        fin >> N >> M >> coolingType;
-        w.resize(N);
-        for (int i = 0; i < N; ++i) fin >> w[i];
-        fin.close();
     } else {
         std::cerr << "Ошибка: неправильные аргументы.\n";
         std::cerr << "Использование:\n";
