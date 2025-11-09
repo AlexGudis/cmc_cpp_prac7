@@ -485,7 +485,7 @@ int main(int argc, char** argv) {
 
     // ------------------ Закон охлаждения ------------------
     double T0 = 100.0;
-    int maxIter = 10000;
+    int maxIter = 100000;
     int NO_IMPROVE_LIMIT = 100;
     unique_ptr<CoolingLaw> cooling;
 

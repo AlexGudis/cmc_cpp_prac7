@@ -100,19 +100,19 @@ struct ScheduleSolution : Solution {
         ostringstream oss;
         oss << "Schedule (M=" << M << ", N=" << N << "): (K1)=" << criteria() << "\n";
 
-        for (int j = 0; j < M; ++j) {
-            int sum = 0;
-            for (int id : jobLists[j])
-                sum += w[id];
+        // for (int j = 0; j < M; ++j) {
+        //     int sum = 0;
+        //     for (int id : jobLists[j])
+        //         sum += w[id];
 
-            oss << " CPU " << j << " (sum=" << sum << "): ";
-            // for (size_t k = 0; k < jobLists[j].size(); ++k) {
-            //     int id = jobLists[j][k];
-            //     oss << id << "(" << w[id] << ")";
-            //     if (k + 1 < jobLists[j].size()) oss << ",";
-            // }
-            // oss << "\n";
-        }
+        //     oss << " CPU " << j << " (sum=" << sum << "): ";
+        //     for (size_t k = 0; k < jobLists[j].size(); ++k) {
+        //         int id = jobLists[j][k];
+        //         oss << id << "(" << w[id] << ")";
+        //         if (k + 1 < jobLists[j].size()) oss << ",";
+        //     }
+        //     oss << "\n";
+        // }
 
         return oss.str();
     }
@@ -139,7 +139,6 @@ struct ScheduleSolution : Solution {
 
 
 // ------------------------------ Конкретные мутации ------------------------------
-
 // 1) SwapTwoJobs: выбирает случайно две работы (возможно на одном и том же CPU) и меняет их местами.
 struct SwapTwoJobs : Mutation {
     void apply(Solution &s, mt19937 &rng) const override {
@@ -253,7 +252,6 @@ struct SimulatedAnnealing {
         : T0(T0_), maxIterations(maxIter_), noImproveLimit(noImproveLimit_),
           cooling(move(cooling_)), mutation(mutation_)
     {
-        // Надо ли вот это?
         if (seed == 0) {
             random_device rd;
             seed = rd();
@@ -275,7 +273,7 @@ struct SimulatedAnnealing {
         int iter = 0;
         int noImprove = 0;
 
-        while (iter < maxIterations && noImprove < noImproveLimit) {
+        while (noImprove < noImproveLimit) {
             // создаём кандидата
             unique_ptr<Solution> new_solution = best_solution->clone();
             // применяем мутацию (in-place)
@@ -456,6 +454,8 @@ InputData readCSV(const string &filename) {
     return data;
 }
 
+
+
 // ------------------------------ Пример использования в main ------------------------------
 int main(int argc, char** argv) {
     ios::sync_with_stdio(false);
@@ -485,12 +485,12 @@ int main(int argc, char** argv) {
     */
     // ------------------ Режимы ------------------
     if (argc == 1) {
-        std::cout << "[Mode 1] Автоматическая генерация (по умолчанию)\n";
+        std::cout << "[Mode 1] Автоматическая генерация (по умолчанию)" << std::endl;
         N = 5; M = 2;
         w = generateDurations(N, minW, maxW, rng);
     }
     else if (argc == 5 && string(argv[1]) == "default") {
-        std::cout << "[Mode 2] Аргументы командной строки\n";
+        std::cout << "[Mode 2] Аргументы командной строки" << std::endl;
         N = stoi(argv[2]);
         M = stoi(argv[3]);
         coolingType = argv[4];
@@ -526,10 +526,10 @@ int main(int argc, char** argv) {
     } else {
         std::cerr << "Ошибка: неправильные аргументы.\n";
         std::cerr << "Использование:\n";
-        std::cerr << "  ./main                    — авто режим\n";
-        std::cerr << "  ./main default N M cooling [seed] — параметры из аргументов\n";
-        std::cerr << "  ./main manual             — ввод вручную\n";
-        std::cerr << "  ./main file input.txt     — ввод из файла\n";
+        std::cerr << "  ./main                     — авто режим\n";
+        std::cerr << "  ./main default N M cooling — параметры из аргументов\n";
+        std::cerr << "  ./main manual              — ввод вручную\n";
+        std::cerr << "  ./main file input.txt      — ввод из файла\n";
         std::cout << std::endl;
         return 1;
     }
@@ -557,7 +557,7 @@ int main(int argc, char** argv) {
 
     // ------------------ Закон охлаждения ------------------
     double T0 = 100.0;
-    int maxIter = 10000;
+    int maxIter = 100000;
     int NO_IMPROVE_LIMIT = 100;
     unique_ptr<CoolingLaw> cooling;
 
@@ -585,17 +585,17 @@ int main(int argc, char** argv) {
     std::cout << "Общее время работы: " << elapsed.count() << " секунд" << std::endl << std::endl;
 
     
-    // ------------------ Запуск последовательного ИО ------------------
-    std::cout << "=== Последовательная версия (threads=" << 1 << ") ===" << std::endl;
-    SimulatedAnnealing sa(T0, maxIter, NO_IMPROVE_LIMIT, move(cooling), composite, seed);
-    start = chrono::steady_clock::now();
+    // // ------------------ Запуск последовательного ИО ------------------
+    // std::cout << "=== Последовательная версия (threads=" << 1 << ") ===" << std::endl;
+    // SimulatedAnnealing sa(T0, maxIter, NO_IMPROVE_LIMIT, move(cooling), composite, seed);
+    // start = chrono::steady_clock::now();
     
-    unique_ptr<Solution> best = sa.run(initial);
+    // unique_ptr<Solution> best = sa.run(initial);
     
-    finish = chrono::steady_clock::now();
-    elapsed = finish - start;
+    // finish = chrono::steady_clock::now();
+    // elapsed = finish - start;
 
-    cout << best->toString();
-    std::cout << "Общее время работы: " << elapsed.count() << " секунд" << std::endl;
+    // cout << best->toString();
+    // std::cout << "Общее время работы: " << elapsed.count() << " секунд" << std::endl;
     return 0;
 }
