@@ -1,2 +1,6 @@
 *.o
 ./logs/*
+venv
+__pycache__
+input
+*.csv
