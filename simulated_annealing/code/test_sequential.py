@@ -1,6 +1,5 @@
 import csv
 import subprocess
-import time
 from input_generator import generate_input_csv
 import re
 import csv
@@ -32,7 +31,7 @@ def run_simulation(filename):
     """
     total_cost = 0
     total_time = 0
-    num_runs = 5
+    num_runs = 1
 
     for i in range(num_runs):
         print(f"Starting round {i}")
@@ -61,10 +60,10 @@ def run_simulation(filename):
 
 def main():
     # Параметры для тестирования
-    num_jobs_list = [500 * i for i in range(1, 21)]
-    min_duration = 2
-    max_duration = 20
-    num_processors_list = [5 * i for i in range(1, 11)]
+    num_jobs_list = [10000, 50000, 100_000, 170_000]
+    min_duration = 1
+    max_duration = 100
+    num_processors_list = [50, 100, 150, 200]
     cooling_methods = ["Boltzmann", "Cauchy", "Mixed"]
 
     # Открываем файл для записи результатов

@@ -32,20 +32,20 @@ def plot_heatmaps_by_cooling(csv_path: str, output_dir: str = "heatmaps"):
             columns="num_jobs",
             values="execution_time",
             aggfunc="mean"
-        )
+        ).sort_index(ascending=False)
         pivot_k1 = group.pivot_table(
             index="num_processors",
             columns="num_jobs",
             values="k1",
             aggfunc="mean"
-        )
+        ).sort_index(ascending=False)
 
         # --- Карта по execution_time ---
         plt.figure(figsize=(8, 6))
         sns.heatmap(
             pivot_time,
             cmap="rocket_r",
-            #annot=True,
+            annot=True,
             fmt=".2f",
             cbar_kws={"label": "Execution time, s"}
         )
@@ -62,7 +62,7 @@ def plot_heatmaps_by_cooling(csv_path: str, output_dir: str = "heatmaps"):
         sns.heatmap(
             pivot_k1,
             cmap="crest",
-            #annot=True,
+            annot=True,
             fmt=".1f",
             cbar_kws={"label": "k1 value"}
         )
