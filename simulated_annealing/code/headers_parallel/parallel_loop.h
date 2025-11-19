@@ -15,7 +15,7 @@ void parallelSimulatedAnnealing(
     double globalBestCriteria = globalBest->criteria();
 
     int globalNoImprove = 0;
-    const int maxGlobalNoImprove = 10; // критерий останова по ТЗ
+    const int maxGlobalNoImprove = 30; // критерий останова по ТЗ
 
     while (globalNoImprove < maxGlobalNoImprove) {
         vector<thread> threads;
@@ -56,7 +56,7 @@ void parallelSimulatedAnnealing(
                 globalBestCriteria = crit;
                 globalBest = localBest[i]->clone();
                 improved = true;
-                cout << "[Iter] New global best = " << crit << "\n";
+                std::cerr << "[Iter] New global best = " << crit << std::endl;
             }
         }
 

@@ -155,17 +155,5 @@ int main(int argc, char** argv) {
     std::cout << "Общее время работы: " << elapsed.count() << " секунд" << std::endl << std::endl;
 
     
-    // // ------------------ Запуск последовательного ИО ------------------
-    // std::cout << "=== Последовательная версия (threads=" << 1 << ") ===" << std::endl;
-    // SimulatedAnnealing sa(T0, maxIter, NO_IMPROVE_LIMIT, move(cooling), composite, seed);
-    // start = chrono::steady_clock::now();
-    
-    // unique_ptr<Solution> best = sa.run(initial);
-    
-    // finish = chrono::steady_clock::now();
-    // elapsed = finish - start;
-
-    // cout << best->toString();
-    // std::cout << "Общее время работы: " << elapsed.count() << " секунд" << std::endl;
     return 0;
 }
