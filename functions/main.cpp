@@ -1,4 +1,5 @@
-#include "func.cpp"
+#include "func.h"
+#include <iostream>
 
 /**
  * Пример использования библиотеки (демонстрация работы)

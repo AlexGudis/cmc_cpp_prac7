@@ -17,7 +17,7 @@ test: tests.out
 tests.out: tests.cpp func.cpp
 	$(CC) tests.cpp -O2 -Wall -Wextra -Wpedantic -std=c++23 -lm -lgtest -o tests.out
 
-main.out: main.o funclib.o
+main.out: main.o func.o
 	$(CC) $(CPPFLAGS) -o $@ $^
 
 main.o: main.cpp
