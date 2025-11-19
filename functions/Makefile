@@ -14,13 +14,16 @@ run: main.out
 test: tests.out
 	./tests.out
 
-tests.out: tests.cpp funclib.cpp
+tests.out: tests.cpp func.cpp
 	$(CC) tests.cpp -O2 -Wall -Wextra -Wpedantic -std=c++23 -lm -lgtest -o tests.out
 
-main.out: main.o
+main.out: main.o funclib.o
 	$(CC) $(CPPFLAGS) -o $@ $^
 
 main.o: main.cpp
+	$(CC) $(CPPFLAGS) -c -o $@ $^
+
+func.o: func.cpp
 	$(CC) $(CPPFLAGS) -c -o $@ $^
 
 objclean:
