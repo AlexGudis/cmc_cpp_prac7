@@ -84,7 +84,7 @@ int main() {
         // Градиентный спуск с сложной функцией
         std::cout << "\n=== Градиентный спуск ===" << std::endl;
         // Ищем корень уравнения: (x^2 - 4) = 0 (корни: x=2, x=-2)
-        auto quadratic = *x2 - *FunctionFactory::Create("constant", 4);
+        auto quadratic = *x2 - *FunctionFactory::Create("const", 4);
         double root = FindRootGradientDescent(*quadratic, 1.0, 100);
         std::cout << "Корень уравнения x^2 - 4 = 0: " << root << std::endl;
         

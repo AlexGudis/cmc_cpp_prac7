@@ -6,8 +6,8 @@
 
 // -------------------------------------------- Реализация --------------------------------------------
 
-// IdentFunction implementation
 
+// IdentFunction implementation
 /**
  * Вычисляет значение тождественной функции f(x) = x
  */
@@ -37,8 +37,8 @@ std::shared_ptr<TFunction> IdentFunction::Clone() const {
     return std::make_shared<IdentFunction>();  // Создаем новый объект
 }
 
-// ConstFunction implementation
 
+// ConstFunction implementation
 /**
  * Конструктор константной функции
  * @param value - значение константы
@@ -78,8 +78,8 @@ std::shared_ptr<TFunction> ConstFunction::Clone() const {
     return std::make_shared<ConstFunction>(value_);  // Создаем копию с тем же значением
 }
 
-// PowerFunction implementation
 
+// PowerFunction implementation
 /**
  * Конструктор степенной функции: x**power
  * @param power - показатель степени
@@ -121,8 +121,8 @@ std::shared_ptr<TFunction> PowerFunction::Clone() const {
     return std::make_shared<PowerFunction>(power_);
 }
 
-// ExpFunction implementation
 
+// ExpFunction implementation
 /**
  * Вычисляет значение экспоненциальной функции f(x) = exp(x)
  */
@@ -152,8 +152,8 @@ std::shared_ptr<TFunction> ExpFunction::Clone() const {
     return std::make_shared<ExpFunction>();
 }
 
-// PolynomialFunction implementation
 
+// PolynomialFunction implementation
 /**
  * Конструктор полиномиальной функции
  * @param coefficients - вектор коэффициентов: [a₀, a₁, a₂, ..., aₙ]
@@ -254,8 +254,8 @@ std::shared_ptr<TFunction> PolynomialFunction::Clone() const {
     return std::make_shared<PolynomialFunction>(coefficients_);
 }
 
-// AddFunction implementation
 
+// AddFunction implementation
 /**
  * Конструктор функции-суммы
  * @param left - левая функция (первое слагаемое)
@@ -294,8 +294,8 @@ std::shared_ptr<TFunction> AddFunction::Clone() const {
     return std::make_shared<AddFunction>(left_->Clone(), right_->Clone());
 }
 
-// SubtractFunction implementation
 
+// SubtractFunction implementation
 /**
  * Конструктор функции-разности
  * @param left - левая функция (уменьшаемое)
@@ -334,8 +334,8 @@ std::shared_ptr<TFunction> SubtractFunction::Clone() const {
     return std::make_shared<SubtractFunction>(left_->Clone(), right_->Clone());
 }
 
-// MultiplyFunction implementation
 
+// MultiplyFunction implementation
 /**
  * Конструктор функции-произведения
  * @param left - левая функция (первый множитель)
@@ -375,8 +375,8 @@ std::shared_ptr<TFunction> MultiplyFunction::Clone() const {
     return std::make_shared<MultiplyFunction>(left_->Clone(), right_->Clone());
 }
 
-// DivideFunction implementation
 
+// DivideFunction implementation
 /**
  * Конструктор функции-частного
  * @param left - левая функция (числитель)
@@ -431,8 +431,8 @@ std::shared_ptr<TFunction> DivideFunction::Clone() const {
     return std::make_shared<DivideFunction>(left_->Clone(), right_->Clone());
 }
 
-// FunctionFactory implementation
 
+// FunctionFactory implementation
 /**
  * Фабричный метод для создания функций
  * Согласно заданию: создает объекты по строковому параметру type
@@ -514,8 +514,8 @@ TFunctionPtr operator/(const TFunction& lhs, const TFunction& rhs) {
     return std::make_shared<DivideFunction>(lhs.Clone(), rhs.Clone());
 }
 
-// Gradient descent implementation
 
+// Gradient descent implementation
 /**
  * Находит корень уравнения f(x) = 0 методом градиентного спуска
  * Согласно заданию п.4: функция принимает арифметическое выражение f(x)
