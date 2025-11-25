@@ -173,177 +173,105 @@ std::shared_ptr<TFunction> PolynomialFunction::Clone() const {
 
 
 // AddFunction implementation
-/**
- * Конструктор функции-суммы
- * @param left - левая функция (первое слагаемое)
- * @param right - правая функция (второе слагаемое)
- */
 AddFunction::AddFunction(TFunctionPtr left, TFunctionPtr right) 
     : left_(left), right_(right) {}
 
-/**
- * Вычисляет сумму двух функций: f(x) = g(x) + h(x)
- */
+// Вычисляет сумму двух функций: f(x) = g(x) + h(x)
 double AddFunction::operator()(double x) const {
-    return (*left_)(x) + (*right_)(x);  // Сумма значений
+    return (*left_)(x) + (*right_)(x);
 }
 
-/**
- * Вычисляет производную суммы
- * Производная суммы: (g+h)' = g' + h'
- */
+// Производная суммы: (g+h)' = g' + h'
 double AddFunction::GetDeriv(double x) const {
-    return left_->GetDeriv(x) + right_->GetDeriv(x);  // Сумма производных
+    return left_->GetDeriv(x) + right_->GetDeriv(x);
 }
 
-/**
- * Строковое представление суммы
- * Формат: "(left + right)"
- */
 std::string AddFunction::ToString() const {
     return "(" + left_->ToString() + " + " + right_->ToString() + ")";
 }
 
-/**
- * Создает копию функции-суммы
- */
 std::shared_ptr<TFunction> AddFunction::Clone() const {
     return std::make_shared<AddFunction>(left_->Clone(), right_->Clone());
 }
 
 
 // SubtractFunction implementation
-/**
- * Конструктор функции-разности
- * @param left - левая функция (уменьшаемое)
- * @param right - правая функция (вычитаемое)
- */
 SubtractFunction::SubtractFunction(TFunctionPtr left, TFunctionPtr right) 
     : left_(left), right_(right) {}
 
-/**
- * Вычисляет разность двух функций: f(x) = g(x) - h(x)
- */
+// Вычисляет разность двух функций: f(x) = g(x) - h(x)
 double SubtractFunction::operator()(double x) const {
-    return (*left_)(x) - (*right_)(x);  // Разность значений
+    return (*left_)(x) - (*right_)(x);
 }
 
-/**
- * Вычисляет производную разности
- * Производная разности: (g-h)' = g' - h'
- */
+// Производная разности: (g-h)' = g' - h'
 double SubtractFunction::GetDeriv(double x) const {
-    return left_->GetDeriv(x) - right_->GetDeriv(x);  // Разность производных
+    return left_->GetDeriv(x) - right_->GetDeriv(x);
 }
 
-/**
- * Строковое представление разности
- * Формат: "(left - right)"
- */
 std::string SubtractFunction::ToString() const {
     return "(" + left_->ToString() + " - " + right_->ToString() + ")";
 }
 
-/**
- * Создает копию функции-разности
- */
 std::shared_ptr<TFunction> SubtractFunction::Clone() const {
     return std::make_shared<SubtractFunction>(left_->Clone(), right_->Clone());
 }
 
 
 // MultiplyFunction implementation
-/**
- * Конструктор функции-произведения
- * @param left - левая функция (первый множитель)
- * @param right - правая функция (второй множитель)
- */
 MultiplyFunction::MultiplyFunction(TFunctionPtr left, TFunctionPtr right) 
     : left_(left), right_(right) {}
 
-/**
- * Вычисляет произведение двух функций: f(x) = g(x) * h(x)
- */
+// Вычисляет произведение двух функций: f(x) = g(x) * h(x)
 double MultiplyFunction::operator()(double x) const {
-    return (*left_)(x) * (*right_)(x);  // Произведение значений
+    return (*left_)(x) * (*right_)(x);
 }
 
-/**
- * Вычисляет производную произведения по правилу Лейбница
- * Производная произведения: (g*h)' = g'*h + g*h'
- */
 double MultiplyFunction::GetDeriv(double x) const {
     // (f*g)' = f'*g + f*g'
     return left_->GetDeriv(x) * (*right_)(x) + (*left_)(x) * right_->GetDeriv(x);
 }
 
-/**
- * Строковое представление произведения
- * Формат: "(left * right)"
- */
 std::string MultiplyFunction::ToString() const {
     return "(" + left_->ToString() + " * " + right_->ToString() + ")";
 }
 
-/**
- * Создает копию функции-произведения
- */
 std::shared_ptr<TFunction> MultiplyFunction::Clone() const {
     return std::make_shared<MultiplyFunction>(left_->Clone(), right_->Clone());
 }
 
 
 // DivideFunction implementation
-/**
- * Конструктор функции-частного
- * @param left - левая функция (числитель)
- * @param right - правая функция (знаменатель)
- */
 DivideFunction::DivideFunction(TFunctionPtr left, TFunctionPtr right) 
     : left_(left), right_(right) {}
 
-/**
- * Вычисляет частное двух функций: f(x) = g(x) / h(x)
- * @throws std::logic_error при делении на ноль
- */
+// Вычисляет частное двух функций: f(x) = g(x) / h(x)
 double DivideFunction::operator()(double x) const {
-    double denominator = (*right_)(x);  // Вычисляем знаменатель
+    double denominator = (*right_)(x);
     if (denominator == 0) {
-        throw std::logic_error("Division by zero");  // Проверка деления на ноль
+        throw std::logic_error("Division by zero");
     }
-    return (*left_)(x) / denominator;  // Частное значений
+    return (*left_)(x) / denominator;
 }
 
-/**
- * Вычисляет производную частного по правилу дифференцирования дроби
- * Производная частного: (g/h)' = (g'*h - g*h') / h²
- * @throws std::logic_error при делении на ноль в производной
- */
 double DivideFunction::GetDeriv(double x) const {
     // (f/g)' = (f'*g - f*g') / g^2
-    double f = (*left_)(x);        // Значение числителя
-    double g = (*right_)(x);       // Значение знаменателя
-    double f_prime = left_->GetDeriv(x);  // Производная числителя
-    double g_prime = right_->GetDeriv(x); // Производная знаменателя
+    double f = (*left_)(x); 
+    double g = (*right_)(x);    
+    double f_prime = left_->GetDeriv(x);  
+    double g_prime = right_->GetDeriv(x); 
     
     if (g == 0) {
-        throw std::logic_error("Division by zero in derivative");  // Проверка
+        throw std::logic_error("Division by zero in derivative");  
     }
     
-    return (f_prime * g - f * g_prime) / (g * g);  // Формула производной частного
+    return (f_prime * g - f * g_prime) / (g * g);  
 }
 
-/**
- * Строковое представление частного
- * Формат: "(left / right)"
- */
 std::string DivideFunction::ToString() const {
     return "(" + left_->ToString() + " / " + right_->ToString() + ")";
 }
 
-/**
- * Создает копию функции-частного
- */
 std::shared_ptr<TFunction> DivideFunction::Clone() const {
     return std::make_shared<DivideFunction>(left_->Clone(), right_->Clone());
 }
