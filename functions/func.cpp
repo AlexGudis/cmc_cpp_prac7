@@ -4,252 +4,169 @@
 #include <iostream>
 
 
-// -------------------------------------------- Реализация --------------------------------------------
-
-
+// --------------------------------------------------- Реализация ---------------------------------------------------
 // IdentFunction implementation
-/**
- * Вычисляет значение тождественной функции f(x) = x
- */
+// Вычисляет значение тождественной функции f(x) = x
 double IdentFunction::operator()(double x) const {
-    return x;  // Просто возвращаем переданный аргумент
+    return x;
 }
 
-/**
- * Вычисляет производную тождественной функции
- * Производная f(x) = x равна f'(x) = 1
- */
+// Вычисляет производную тождественной функции
 double IdentFunction::GetDeriv(double x) const {
-    return 1.0;  // Производная константна
+    return 1.0;
 }
 
-/**
- * Строковое представление тождественной функции
- */
 std::string IdentFunction::ToString() const {
-    return "x";  // Просто "x"
+    return "x";
 }
 
-/**
- * Создает копию тождественной функции
- */
 std::shared_ptr<TFunction> IdentFunction::Clone() const {
-    return std::make_shared<IdentFunction>();  // Создаем новый объект
+    return std::make_shared<IdentFunction>();
 }
 
 
 // ConstFunction implementation
-/**
- * Конструктор константной функции
- * @param value - значение константы
- */
+// value - значение константы
 ConstFunction::ConstFunction(double value) : value_(value) {}
 
-/**
- * Вычисляет значение константной функции f(x) = c
- * Всегда возвращает значение константы, независимо от x
- */
+// Вычисляет значение константной функции f(x) = c
 double ConstFunction::operator()(double x) const {
-    return value_;  // Игнорируем x, возвращаем константу
+    return value_;
 }
 
-/**
- * Вычисляет производную константной функции
- * Производная константы всегда равна 0
- */
 double ConstFunction::GetDeriv(double x) const {
-    return 0.0;  // Производная константы равна нулю
+    return 0.0;  // Производная константы
 }
 
-/**
- * Строковое представление константной функции
- * Преобразует числовое значение в строку
- */
 std::string ConstFunction::ToString() const {
-    std::ostringstream oss;  // Поток для построения строки
-    oss << value_;           // Записываем значение в поток
-    return oss.str();        // Возвращаем полученную строку
+    std::ostringstream oss;
+    oss << value_;
+    return oss.str();
 }
 
-/**
- * Создает копию константной функции
- */
 std::shared_ptr<TFunction> ConstFunction::Clone() const {
-    return std::make_shared<ConstFunction>(value_);  // Создаем копию с тем же значением
+    return std::make_shared<ConstFunction>(value_);
 }
 
 
 // PowerFunction implementation
 /**
  * Конструктор степенной функции: x**power
- * @param power - показатель степени
+ * power - показатель степени
  */
 PowerFunction::PowerFunction(int power) : power_(power) {}
 
-/**
- * Вычисляет значение степенной функции f(x) = x^n
- * Использует std::pow для возведения в степень
- */
+// Вычисляет значение степенной функции f(x) = x^n
 double PowerFunction::operator()(double x) const {
-    return std::pow(x, power_);  // x в степени power_
+    return std::pow(x, power_);
 }
 
-/**
- * Вычисляет производную степенной функции
- * Производная f(x) = x^n равна f'(x) = n*x^(n-1)
- * Для n=0 (константа) производная равна 0
- */
+// Вычисляет производную степенной функции
 double PowerFunction::GetDeriv(double x) const {
     if (power_ == 0) return 0.0;  // Производная константы
-    return power_ * std::pow(x, power_ - 1);  // n*x^(n-1)
+    return power_ * std::pow(x, power_ - 1);
 }
 
-/**
- * Строковое представление степенной функции
- * Специальные случаи для степени 0 и 1
- */
 std::string PowerFunction::ToString() const {
     if (power_ == 0) return "1";      // x^0 = 1
     if (power_ == 1) return "x";      // x^1 = x
     return "x^" + std::to_string(power_);  // x^n для n>1
 }
 
-/**
- * Создает копию степенной функции
- */
 std::shared_ptr<TFunction> PowerFunction::Clone() const {
     return std::make_shared<PowerFunction>(power_);
 }
 
 
 // ExpFunction implementation
-/**
- * Вычисляет значение экспоненциальной функции f(x) = exp(x)
- */
+// Вычисляет значение экспоненциальной функции f(x) = exp(x)
 double ExpFunction::operator()(double x) const {
-    return std::exp(x);  // e в степени x
+    return std::exp(x);
 }
 
-/**
- * Вычисляет производную экспоненциальной функции
- * Производная exp(x) равна exp(x)
- */
 double ExpFunction::GetDeriv(double x) const {
     return std::exp(x);  // Производная экспоненты равна самой экспоненте
 }
 
-/**
- * Строковое представление экспоненциальной функции
- */
 std::string ExpFunction::ToString() const {
     return "exp(x)";
 }
 
-/**
- * Создает копию экспоненциальной функции
- */
 std::shared_ptr<TFunction> ExpFunction::Clone() const {
     return std::make_shared<ExpFunction>();
 }
 
 
 // PolynomialFunction implementation
-/**
- * Конструктор полиномиальной функции
- * @param coefficients - вектор коэффициентов: [a₀, a₁, a₂, ..., aₙ]
- * где полином: a₀ + a₁x + a₂x² + ... + aₙxⁿ
- */
+// Конструктор полиномиальной функции
 PolynomialFunction::PolynomialFunction(const std::vector<double>& coefficients) 
-    : coefficients_(coefficients) {}  // Инициализируем коэффициенты
+    : coefficients_(coefficients) {}
 
-/**
- * Вычисляет значение полинома в точке x using Horner's method
- * Полином: a₀ + a₁x + a₂x² + ... + aₙxⁿ
- */
+// Вычисляет значение полинома в точке x
 double PolynomialFunction::operator()(double x) const {
-    double result = 0.0;    // Накапливаем результат
-    double x_power = 1.0;   // Текущая степень x (начинаем с x^0 = 1)
+    double result = 0.0;
+    double x_power = 1.0;
     
-    // Проходим по всем коэффициентам
     for (double coef : coefficients_) {
-        result += coef * x_power;  // Добавляем aᵢ * xⁱ
-        x_power *= x;              // Увеличиваем степень для следующего коэффициента
+        result += coef * x_power;
+        x_power *= x;
     }
     
     return result;
 }
 
-/**
- * Вычисляет производную полинома в точке x
- * Производная: a₁ + 2a₂x + 3a₃x² + ... + naₙxⁿ⁻¹
- * Для полинома степени 0 (константа) производная равна 0
- */
+// Вычисляет производную полинома в точке x: a_1 + 2 * a_2 * x + 3 * a_3 * x^2 + ... + n * a_n * x^(n-1)
 double PolynomialFunction::GetDeriv(double x) const {
-    if (coefficients_.size() <= 1) return 0.0;  // Производная константы или пустого полинома
+    if (coefficients_.size() <= 1) return 0.0;
     
     double result = 0.0;
-    double x_power = 1.0;  // Начинаем с x^0
-    
-    // Начинаем с i=1, так как производная от a₀ равна 0
+    double x_power = 1.0;
     for (size_t i = 1; i < coefficients_.size(); ++i) {
-        result += coefficients_[i] * i * x_power;  // Добавляем i*aᵢ * xⁱ⁻¹
-        x_power *= x;                              // Увеличиваем степень
+        result += coefficients_[i] * i * x_power;
+        x_power *= x;
     }
     
     return result;
 }
 
-/**
- * Строковое представление полинома
- * Форматирует полином в читаемом виде: "1 + 2*x - 3*x^2"
- */
+// Форматирует полином в читаемом виде: "1 + 2*x - 3*x^2"
 std::string PolynomialFunction::ToString() const {
-    if (coefficients_.empty()) return "0";  // Пустой полином
+    if (coefficients_.empty()) return "0";
     
-    std::ostringstream oss;  // Поток для построения строки
-    bool first_term = true;  // Флаг первого слагаемого (для знака)
+    std::ostringstream oss;
+    bool first_term = true;
     
-    // Проходим по всем коэффициентам
     for (size_t i = 0; i < coefficients_.size(); ++i) {
-        if (coefficients_[i] == 0) continue;  // Пропускаем нулевые коэффициенты
+        if (coefficients_[i] == 0) continue; 
         
         // Обрабатываем знак
         if (!first_term) {
-            // Не первый член - добавляем знак
             oss << (coefficients_[i] > 0 ? " + " : " - ");
         } else if (coefficients_[i] < 0) {
-            // Первый член с отрицательным знаком
             oss << "-";
         }
         
-        double abs_coef = std::abs(coefficients_[i]);  // Абсолютное значение коэффициента
+        double abs_coef = std::abs(coefficients_[i]);
         
         // Форматируем член в зависимости от степени
         if (i == 0) {
-            // Свободный член: просто число
             oss << abs_coef;
         } else {
-            // Член с x
             if (abs_coef != 1.0) {
-                // Коэффициент не равен 1 - показываем его
                 oss << abs_coef << "*";
             }
             oss << "x";
             if (i > 1) {
-                // Степень больше 1 - показываем степень
                 oss << "^" << i;
             }
         }
         
-        first_term = false;  // Больше не первый член
+        first_term = false;
     }
     
     return oss.str();
 }
 
-/**
- * Создает копию полиномиальной функции
- */
 std::shared_ptr<TFunction> PolynomialFunction::Clone() const {
     return std::make_shared<PolynomialFunction>(coefficients_);
 }
