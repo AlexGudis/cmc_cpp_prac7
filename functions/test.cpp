@@ -108,7 +108,7 @@ TEST_F(FunctionLibraryTest, DerivativeOfPower) {
 // Проверка градиентного спуска для линейной функции
 TEST_F(FunctionLibraryTest, GradientDescentLinear) {
     auto linear = FunctionFactory::Create("polynomial", std::vector<double>{-2, 1}); // f(x) = - 2 + x
-    double root = FindRootGradientDescent(*linear, 0.0, 100);
+    double root = FindRootGradientDescent(*linear, 0.0, 10000);
     EXPECT_NEAR(root, 2.0, 0.1);           
 }
 

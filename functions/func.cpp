@@ -233,7 +233,7 @@ double MultiplyFunction::GetDeriv(double x) const {
 }
 
 std::string MultiplyFunction::ToString() const {
-    return "(" + left_->ToString() + " * " + right_->ToString() + ")";
+    return "(" + left_->ToString() + ") * (" + right_->ToString() + ")";
 }
 
 std::shared_ptr<TFunction> MultiplyFunction::Clone() const {
@@ -329,18 +329,21 @@ TFunctionPtr operator/(const TFunction& lhs, const TFunction& rhs) {
 
 
 // Gradient descent implementation
-// x_{n+1} = x_n - learning_rate * f(x_n) / f'(x_n)
+// x_{n+1} = x_n - learn * f(x_n) / f'(x_n)
 
 double FindRootGradientDescent(const TFunction& func, double initial_guess, int iterations) {
     double x = initial_guess;
-    double learning_rate = 0.1;
+    double learn = 0.001;
     
     for (int i = 0; i < iterations; ++i) {
-        double gradient = func.GetDeriv(x); 
-        double value = func(x);          
+        double value = func(x);
+        double gradient = func.GetDeriv(x);
         
-        // Добавляем 1e-10 для избежания деления на ноль
-        x = x - learning_rate * value / (std::abs(gradient) + 1e-10);
+        if (std::abs(gradient) < 1e-10) {
+             gradient = (gradient >= 0) ? 1e-10 : -1e-10;
+        }
+        
+        x = x - learn * value / gradient;
     }
     
     return x;
