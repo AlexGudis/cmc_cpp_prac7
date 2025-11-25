@@ -278,115 +278,71 @@ std::shared_ptr<TFunction> DivideFunction::Clone() const {
 
 
 // FunctionFactory implementation
-/**
- * Фабричный метод для создания функций
- * Согласно заданию: создает объекты по строковому параметру type
- * @param type - тип функции: "ident", "const", "power", "exp", "polynomial"
- * @param params - параметры функции
- * @return умный указатель на созданную функцию
- * @throws std::logic_error при неизвестном типе или неверных параметрах
- */
 TFunctionPtr FunctionFactory::Create(const std::string& type, const std::vector<double>& params) {
     if (type == "ident") {
-        // Тождественная функция не требует параметров
         return std::make_shared<IdentFunction>();
     } else if (type == "const") {
-        // Константная функция требует один параметр - значение константы
         if (params.size() != 1) {
             throw std::logic_error("Const function requires exactly one parameter");
         }
         return std::make_shared<ConstFunction>(params[0]);
     } else if (type == "power") {
-        // Степенная функция требует один параметр - показатель степени
         if (params.size() != 1) {
             throw std::logic_error("Power function requires exactly one parameter");
         }
         return std::make_shared<PowerFunction>(static_cast<int>(params[0]));
     } else if (type == "exp") {
-        // Экспоненциальная функция не требует параметров
         return std::make_shared<ExpFunction>();
     } else if (type == "polynomial") {
-        // Полиномиальная функция принимает вектор коэффициентов
         return std::make_shared<PolynomialFunction>(params);
     } else {
-        // Неизвестный тип функции
         throw std::logic_error("Unknown function type: " + type);
     }
 }
 
-/**
- * Перегруженная версия для создания функций с одним double параметром
- */
+// Перегруженная версия для создания функций с одним double параметром
 TFunctionPtr FunctionFactory::Create(const std::string& type, double param) {
-    return Create(type, std::vector<double>{param});  // Преобразуем в вектор
+    return Create(type, std::vector<double>{param});
 }
 
-/**
- * Перегруженная версия для создания функций с одним int параметром
- */
 TFunctionPtr FunctionFactory::Create(const std::string& type, int param) {
     return Create(type, std::vector<double>{static_cast<double>(param)});  // Преобразуем int в double
 }
 
-// Operator overloads
 
-/**
- * Оператор сложения функций
- * Согласно заданию: результат - TFunction, представляющий композицию через операцию сложения
- */
+// Operator overloads
 TFunctionPtr operator+(const TFunction& lhs, const TFunction& rhs) {
     return std::make_shared<AddFunction>(lhs.Clone(), rhs.Clone());
 }
 
-/**
- * Оператор вычитания функций
- */
 TFunctionPtr operator-(const TFunction& lhs, const TFunction& rhs) {
     return std::make_shared<SubtractFunction>(lhs.Clone(), rhs.Clone());
 }
 
-/**
- * Оператор умножения функций
- */
 TFunctionPtr operator*(const TFunction& lhs, const TFunction& rhs) {
     return std::make_shared<MultiplyFunction>(lhs.Clone(), rhs.Clone());
 }
 
-/**
- * Оператор деления функций
- */
 TFunctionPtr operator/(const TFunction& lhs, const TFunction& rhs) {
     return std::make_shared<DivideFunction>(lhs.Clone(), rhs.Clone());
 }
 
 
 // Gradient descent implementation
-/**
- * Находит корень уравнения f(x) = 0 методом градиентного спуска
- * Согласно заданию п.4: функция принимает арифметическое выражение f(x)
- * и находит корень уравнения f(x) = 0
- * @param func - функция для поиска корня
- * @param initial_guess - начальное приближение
- * @param iterations - число итераций (проверка сходимости не требуется)
- * @return приближенное значение корня
- * 
- * Алгоритм: x_{n+1} = x_n - learning_rate * f(x_n) / f'(x_n)
- * Это модификация метода Ньютона с фиксированным шагом
- */
+// x_{n+1} = x_n - learning_rate * f(x_n) / f'(x_n)
+
 double FindRootGradientDescent(const TFunction& func, double initial_guess, int iterations) {
-    double x = initial_guess;     // Начальное приближение
-    double learning_rate = 0.1;   // Скорость обучения (можно адаптировать)
+    double x = initial_guess;
+    double learning_rate = 0.1;
     
-    // Выполняем заданное количество итераций
     for (int i = 0; i < iterations; ++i) {
-        double gradient = func.GetDeriv(x);  // Производная в текущей точке
-        double value = func(x);              // Значение функции в текущей точке
+        double gradient = func.GetDeriv(x); 
+        double value = func(x);          
         
-        // Обновляем x по формуле градиентного спуска
         // Добавляем 1e-10 для избежания деления на ноль
         x = x - learning_rate * value / (std::abs(gradient) + 1e-10);
     }
     
-    return x;  // Возвращаем найденное приближение
+    return x;
 }
 
